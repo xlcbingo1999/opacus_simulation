@@ -79,6 +79,7 @@ def generate_job(throughputs, last_job_arrival_time, lam,
                  reference_worker_type='v100', 
                  fixed_job_duration=None, 
                  fixed_privacy_budget=None,
+                 fixed_datablock_select_num=None,
 
                  generate_multi_gpu_jobs=False,
                  generate_multi_priority_jobs=False,
@@ -133,7 +134,10 @@ def generate_job(throughputs, last_job_arrival_time, lam,
     if not generate_multi_gpu_jobs:
         worker_select_num = 1
 
-    datablock_select_num = datablock_select_num_generator_func(rng)
+    if fixed_datablock_select_num is not None:
+        datablock_select_num = fixed_datablock_select_num
+    else:
+        datablock_select_num = datablock_select_num_generator_func(rng)
 
     if fixed_job_duration is not None: # FEATURE(xlc): 这里生成的其实就是v100下的执行时间
         run_time = fixed_job_duration
@@ -196,13 +200,14 @@ def generate_job(throughputs, last_job_arrival_time, lam,
 
     return job
 
-def generate_all_jobs(num, throughputs_path, lam):
+def generate_all_jobs(num, throughputs_path, lam, fixed_datablock_select_num=None):
     throughputs = read_all_throughputs_json_v2(throughputs_path)
     max_real_calculate_time = 0.0
     last_job_arrival_time = 0.0
     jobs_map = {}
     for index in range(num):
-        job = generate_job(throughputs, last_job_arrival_time, lam)
+        job = generate_job(throughputs, last_job_arrival_time, lam, 
+                        fixed_datablock_select_num=fixed_datablock_select_num)
         jobs_map[index] = job
         last_job_arrival_time = job["time"]
     

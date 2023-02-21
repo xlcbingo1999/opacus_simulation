@@ -327,7 +327,7 @@ class Scheduler(object):
         for datablock_identifier in self.sub_train_datasetidentifier_2_dataset_status[target_select_dataset_name].keys():
             # train_all_label_distribution = add_2_map(self.sub_train_datasetidentifier_2_dataset_metadata[target_select_dataset_name][datablock_identifier]["label_distribution"], train_all_label_distribution)
             if self.sub_train_datasetidentifier_2_dataset_status[target_select_dataset_name][datablock_identifier] == DATASET_STATUS_KEY.SUBMITED and self.sub_train_datasetidentifier_2_epsilon_remain[target_select_dataset_name][datablock_identifier] > target_epsilon_require:
-                sub_train_datasetidentifier_2_significance[datablock_identifier] = self.sub_train_datasetidentifier_2_dataset_metadata[target_select_dataset_name][datablock_identifier]["significace"] 
+                sub_train_datasetidentifier_2_significance[datablock_identifier] = self.sub_train_datasetidentifier_2_dataset_metadata[target_select_dataset_name][datablock_identifier]["significance"] 
         # 在这里接入算法?
         sub_train_sort = sort_scores(sub_train_datasetidentifier_2_significance)
         selected_datablock_identifiers = [tu[0] for tu in sub_train_sort[0:target_datablock_select_num]]

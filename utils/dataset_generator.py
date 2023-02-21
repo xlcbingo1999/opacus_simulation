@@ -39,7 +39,7 @@ def generate_subtrain_datablocks(dataset_name, block_num,
         all_blocks[block_name] = {
             "epsilon_capacity": epsilon_capacity_generator(rng),
             "delta_capacity": delta_capacity_generator(rng),
-            "significace": significance_generator(rng)
+            "significance": significance_generator(rng)
         }
     sub_train_result = all_blocks
     test_result = {}
@@ -62,7 +62,7 @@ subtrain_datasets_map = {
                 "epsilon_capacity": 100.0,
                 "delta_capacity": 4e-6,
                 "time": 0,
-                "significace": 1.0,
+                "significance": 1.0,
                 "label_distribution": {
                     "0": 3524,
                     "2": 2491,
@@ -73,7 +73,7 @@ subtrain_datasets_map = {
                 "epsilon_capacity": 100.0,
                 "delta_capacity": 4e-6,
                 "time": 0,
-                "significace": 1.0,
+                "significance": 1.0,
                 "label_distribution": {
                     "0": 3568,
                     "1": 2476,
@@ -84,7 +84,7 @@ subtrain_datasets_map = {
                 "epsilon_capacity": 100.0,
                 "delta_capacity": 4e-6,
                 "time": 0,
-                "significace": 1.0,
+                "significance": 1.0,
                 "label_distribution": {
                     "0": 3388,
                     "1": 2647,
@@ -95,7 +95,7 @@ subtrain_datasets_map = {
                 "epsilon_capacity": 100.0,
                 "delta_capacity": 4e-6,
                 "time": 0,
-                "significace": 1.0,
+                "significance": 1.0,
                 "label_distribution": {
                     "0": 3388,
                     "1": 2647,
@@ -106,7 +106,7 @@ subtrain_datasets_map = {
                 "epsilon_capacity": 100.0,
                 "delta_capacity": 4e-6,
                 "time": 0,
-                "significace": 1.0,
+                "significance": 1.0,
                 "label_distribution": {
                     "0": 3388,
                     "1": 2647,
@@ -117,7 +117,7 @@ subtrain_datasets_map = {
                 "epsilon_capacity": 100.0,
                 "delta_capacity": 4e-6,
                 "time": 0,
-                "significace": 1.0,
+                "significance": 1.0,
                 "label_distribution": {
                     "0": 3388,
                     "1": 2647,
@@ -128,7 +128,7 @@ subtrain_datasets_map = {
                 "epsilon_capacity": 100.0,
                 "delta_capacity": 4e-6,
                 "time": 0,
-                "significace": 1.0,
+                "significance": 1.0,
                 "label_distribution": {
                     "0": 3388,
                     "1": 2647,
@@ -139,7 +139,7 @@ subtrain_datasets_map = {
                 "epsilon_capacity": 100.0,
                 "delta_capacity": 4e-6,
                 "time": 0,
-                "significace": 1.0,
+                "significance": 1.0,
                 "label_distribution": {
                     "0": 3388,
                     "1": 2647,
@@ -150,7 +150,7 @@ subtrain_datasets_map = {
                 "epsilon_capacity": 100.0,
                 "delta_capacity": 4e-6,
                 "time": 0,
-                "significace": 1.0,
+                "significance": 1.0,
                 "label_distribution": {
                     "0": 3388,
                     "1": 2647,
@@ -161,7 +161,7 @@ subtrain_datasets_map = {
                 "epsilon_capacity": 100.0,
                 "delta_capacity": 4e-6,
                 "time": 0,
-                "significace": 1.0,
+                "significance": 1.0,
                 "label_distribution": {
                     "0": 3388,
                     "1": 2647,

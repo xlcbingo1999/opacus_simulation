@@ -5,11 +5,16 @@ from utils.logging_tools import get_logger
 from utils.throughput_reader import read_all_throughputs_json_v2
 from utils.job_generator import generate_all_jobs
 from utils.dataset_generator import generate_all_subtrain_datablocks
+
+from policies.PBG import PBGPolicy
+from policies.Sage import SagePolicy
+
 import time
 from queue import PriorityQueue
 
 import numpy as np
 import random
+import os
 
 
 class SchedEvent(object):
@@ -252,10 +257,18 @@ class Scheduler(object):
         self.sched_info("self.jobid_2_status: {}".format(self.jobid_2_status))
         self.sched_info("self.status_2_jobid: {}".format(self.status_2_jobid))
         # self.sched_info("self.jobid_2_gputarget: {}".format(self.jobid_2_gputarget))
-        self.sched_info("self.sub_train_datasetidentifier_2_dataset_status: {}".format(self.sub_train_datasetidentifier_2_dataset_status))
-        self.sched_info("self.sub_train_datasetidentifier_2_dataset_metadata: {}".format(self.sub_train_datasetidentifier_2_dataset_metadata))
-        self.sched_info("self.sub_train_datasetidentifier_2_epsilon_capacity: {}".format(self.sub_train_datasetidentifier_2_epsilon_capacity))
-        self.sched_info("self.sub_train_datasetidentifier_2_epsilon_remain: {}".format(self.sub_train_datasetidentifier_2_epsilon_remain))
+        self.sched_info("self.sub_train_datasetidentifier_2_dataset_status")
+        for datasetidentifier in self.sub_train_datasetidentifier_2_dataset_status:
+            self.sched_info("datasetidentifier[{}]: {}".format(datasetidentifier, self.sub_train_datasetidentifier_2_dataset_status[datasetidentifier]))
+        self.sched_info("self.sub_train_datasetidentifier_2_dataset_metadata")
+        for datasetidentifier in self.sub_train_datasetidentifier_2_dataset_metadata:
+            self.sched_info("datasetidentifier[{}]: {}".format(datasetidentifier, self.sub_train_datasetidentifier_2_dataset_metadata[datasetidentifier]))
+        self.sched_info("self.sub_train_datasetidentifier_2_epsilon_capacity")
+        for datasetidentifier in self.sub_train_datasetidentifier_2_epsilon_capacity:
+            self.sched_info("datasetidentifier[{}]: {}".format(datasetidentifier, self.sub_train_datasetidentifier_2_epsilon_capacity[datasetidentifier]))
+        self.sched_info("self.sub_train_datasetidentifier_2_epsilon_remain")
+        for datasetidentifier in self.sub_train_datasetidentifier_2_epsilon_remain:
+            self.sched_info("datasetidentifier[{}]: {}".format(datasetidentifier, self.sub_train_datasetidentifier_2_epsilon_remain[datasetidentifier]))
         self.sched_info("==================================")
 
     def get_target_job_status_update_path_and_status(self, job_id, operator):
@@ -306,23 +319,32 @@ class Scheduler(object):
             target_status = JOB_STATUS_KEY.DONE_ALL_SCHED
         return origin_status, target_status
     
-    def get_scheduling_datablock_result(self, target_select_dataset_name, target_epsilon_require, target_datablock_select_num):        
+    def get_scheduling_datablock_result(self, policy, target_select_dataset_name, target_epsilon_require, target_datablock_select_num):        
         selected_datablock_identifiers = []
         if target_select_dataset_name not in self.sub_train_datasetidentifier_2_dataset_status:
             return selected_datablock_identifiers
         # train_all_label_distribution = {}
         sub_train_datasetidentifier_2_significance = {}
+        sub_train_datasetidentifier_2_epsilon_remain = {}
+        sub_train_datasetidentifier_2_epsilon_capcity = {}
         for datablock_identifier in self.sub_train_datasetidentifier_2_dataset_status[target_select_dataset_name].keys():
             # train_all_label_distribution = add_2_map(self.sub_train_datasetidentifier_2_dataset_metadata[target_select_dataset_name][datablock_identifier]["label_distribution"], train_all_label_distribution)
             if self.sub_train_datasetidentifier_2_dataset_status[target_select_dataset_name][datablock_identifier] == DATASET_STATUS_KEY.SUBMITED and self.sub_train_datasetidentifier_2_epsilon_remain[target_select_dataset_name][datablock_identifier] > target_epsilon_require:
-                sub_train_datasetidentifier_2_significance[datablock_identifier] = self.sub_train_datasetidentifier_2_dataset_metadata[target_select_dataset_name][datablock_identifier]["significace"] 
+                sub_train_datasetidentifier_2_significance[datablock_identifier] = self.sub_train_datasetidentifier_2_dataset_metadata[target_select_dataset_name][datablock_identifier]["significance"] 
+                sub_train_datasetidentifier_2_epsilon_remain[datablock_identifier] = self.sub_train_datasetidentifier_2_epsilon_remain[target_select_dataset_name][datablock_identifier]
+                sub_train_datasetidentifier_2_epsilon_capcity[datablock_identifier] = self.sub_train_datasetidentifier_2_epsilon_capacity[target_select_dataset_name][datablock_identifier]
         # 在这里接入算法?
-        sub_train_sort = sort_scores(sub_train_datasetidentifier_2_significance)
-        selected_datablock_identifiers = [tu[0] for tu in sub_train_sort[0:target_datablock_select_num]]
+        selected_datablock_identifiers = policy.get_allocation(
+            sub_train_datasetidentifier_2_significance, 
+            sub_train_datasetidentifier_2_epsilon_remain, 
+            sub_train_datasetidentifier_2_epsilon_capcity, 
+            target_epsilon_require,
+            target_datablock_select_num
+        )
         # not_selected_datablock_identifiers = [tu[0] for tu in sub_train_sort[target_datablock_select_num:]]
         return selected_datablock_identifiers     
 
-    def sched_for_one_job(self, job_id):
+    def sched_for_one_job(self, job_id, policy):
         need_failed_job = False
         dataset_sched_success = False
         if (not need_failed_job) and job_id in self.status_2_jobid[JOB_STATUS_KEY.NO_SCHE]:
@@ -332,7 +354,7 @@ class Scheduler(object):
             
             # 需要使用复杂一点的调度策略了
             selected_datablock_identifiers = \
-                 self.get_scheduling_datablock_result(dataset_name, target_epsilon_require, target_datablock_select_num)
+                 self.get_scheduling_datablock_result(policy, dataset_name, target_epsilon_require, target_datablock_select_num)
             if len(selected_datablock_identifiers) > 0:
                 self.sched_info("Job [{}] selected datablock identifiers: {}".format(job_id, selected_datablock_identifiers))
                 self.jobid_2_datasettargetconfig[job_id]["selected_datablock_identifiers"] = selected_datablock_identifiers
@@ -397,7 +419,8 @@ class Scheduler(object):
     def schd_end(self):
         self.all_finished = True
 
-    def simulate_start(self):
+    def simulate_start(self, policy):
+        self.logger.info("POLICY {} START!".format(policy.name))
         next_event = self.queue.get()
         next_time = next_event.priority
         self.global_time = next_time
@@ -412,7 +435,7 @@ class Scheduler(object):
                 job_id = next_event.metadata["job_id"]
                 self.sche_reflash_job_status(job_id, JOB_STATUS_KEY.NO_SUBMIT, JOB_STATUS_KEY.NO_SCHE)
                 # 调度未调度的任务, 暂时先只考虑job_id的调度即可
-                self.sched_for_one_job(job_id)
+                self.sched_for_one_job(job_id, policy)
             elif next_event.event_key == EVENT_KEY.MAX_TIME:
                 self.logger.info("FINISH caused by MAX_TIME")
                 self.report_status("FINISH MAX_TIME")
@@ -448,16 +471,36 @@ if __name__ == '__main__':
     current_time = time.strftime('%m-%d-%H-%M-%S', time.localtime())
     file_log_name = 'schedule-review-%s' % (current_time)
     result_log_dir_path = '%s/log_schedule_%s' % (prefix_path, date)
-    logger_path = '%s/%s.log' % (result_log_dir_path, file_log_name)
+    logger_path_prefix = '%s/%s' % (result_log_dir_path, file_log_name)
     oracle_throughput_path = '%s/traces/physical_cluster_throughputs_without_unconsolidated.json' % (prefix_path)
 
     job_num = 500
     lam = 3600.0
-    jobs_map, reference_max_time = generate_all_jobs(job_num, oracle_throughput_path, lam)
+    fixed_datablock_select_num = 1
+    jobs_map, reference_max_time = generate_all_jobs(job_num, oracle_throughput_path, lam, 
+                                                    fixed_datablock_select_num=fixed_datablock_select_num)
     subtrain_datasets_map, test_datasets_map = generate_all_subtrain_datablocks(init_dataset_name_2_block_num)
-    sched = Scheduler(logger_path, oracle_throughput_path)
-    # sched.update_gpu(init_gputype_2_num, init_gputype_2_metadata)
-    sched.update_dataset(subtrain_datasets_map, test_datasets_map)
-    sched.update_jobs(jobs_map)
-    sched.update_max_time(reference_max_time)
-    sched.simulate_start()
+    
+    comparison_cost_epsilon = 0.01
+    comparison_z_threshold = 0.9
+    L = 0.01
+    U = 10.0
+    pbg = PBGPolicy(comparison_cost_epsilon, comparison_z_threshold, L, U)
+    sage = SagePolicy()
+    policies = [pbg, sage]
+
+    os.mkdir(logger_path_prefix)
+    for policy in policies:
+        logger_path = '%s/%s.log' % (logger_path_prefix, policy.name)
+        sched = Scheduler(logger_path, oracle_throughput_path)
+        # sched.update_gpu(init_gputype_2_num, init_gputype_2_metadata)
+        sched.update_dataset(subtrain_datasets_map, test_datasets_map)
+        sched.update_jobs(jobs_map)
+        sched.update_max_time(reference_max_time)
+        
+        
+        sched.simulate_start(policy)
+        sched.clear_all_jobs()
+        sched.clear_all_datasets()
+
+    
