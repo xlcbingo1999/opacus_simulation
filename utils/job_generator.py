@@ -200,15 +200,26 @@ def generate_job(throughputs, last_job_arrival_time, lam,
 
     return job
 
-def generate_all_jobs(num, throughputs_path, lam, fixed_datablock_select_num=None):
+def generate_all_jobs(test_num, history_num, throughputs_path, lam, fixed_datablock_select_num=None):
     throughputs = read_all_throughputs_json_v2(throughputs_path)
+    
+    history_last_job_arrival_time = 0.0
+    history_jobs_map = {}
+    for index in range(history_num):
+        job = generate_job(throughputs, history_last_job_arrival_time, lam, 
+                        fixed_datablock_select_num=fixed_datablock_select_num)
+        history_jobs_map[history_num - 1 - index] = job
+        history_last_job_arrival_time = job["time"]
+    for index in range(history_num):
+        history_jobs_map[index]["time"] = history_last_job_arrival_time - history_jobs_map[index]["time"]
+
     max_real_calculate_time = 0.0
     last_job_arrival_time = 0.0
-    jobs_map = {}
-    for index in range(num):
+    test_jobs_map = {}
+    for index in range(test_num):
         job = generate_job(throughputs, last_job_arrival_time, lam, 
                         fixed_datablock_select_num=fixed_datablock_select_num)
-        jobs_map[index] = job
+        test_jobs_map[index] = job
         last_job_arrival_time = job["time"]
     
         for worker_type in job["throughput"].keys():
@@ -216,4 +227,4 @@ def generate_all_jobs(num, throughputs_path, lam, fixed_datablock_select_num=Non
             if last_job_arrival_time + temp_calculate_time > max_real_calculate_time:
                 max_real_calculate_time = last_job_arrival_time + temp_calculate_time
     reference_max_time = 2 * max_real_calculate_time
-    return jobs_map, reference_max_time
+    return test_jobs_map, history_jobs_map, reference_max_time

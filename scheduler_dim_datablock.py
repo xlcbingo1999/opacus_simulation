@@ -23,7 +23,7 @@ def get_df_config():
     parser = argparse.ArgumentParser(
                 description='Sweep through lambda values')
     parser.add_argument('--logging_date', type=str, default="20230223")
-    parser.add_argument('--policies', type=str, default="PBGPolicy:SagePolicy:HISPolicy")
+    parser.add_argument('--policies', type=str, default="HISPolicy") # PBGPolicy:SagePolicy:
     parser.add_argument('--pbg_comparison_cost_epsilons', type=float, nargs="+", default=[0.01])
     parser.add_argument('--pbg_comparison_z_thresholds', type=float, nargs="+", default=[0.7])
     parser.add_argument('--pbg_Ls', type=float, nargs="+", default=[0.01])
@@ -32,7 +32,8 @@ def get_df_config():
     parser.add_argument('--his_betas', type=float, nargs="+", default=[0.01])
     parser.add_argument('--his_gammas', type=float, nargs="+", default=[0.5])
     parser.add_argument('--his_deltas', type=float, nargs="+", default=[0.5])
-
+    parser.add_argument('--his_only_small_flags', type=bool, nargs="+", default=[True])
+    
     args = parser.parse_args()
     return args
 
@@ -253,6 +254,11 @@ class Scheduler(object):
                 count += 1
                 # self.sched_debug("success add new job {}".format(id))
         self.job_sequence_all_num = count
+
+    def update_history_jobs(self, history_jobs_map):
+        for id in sorted(history_jobs_map):
+            self.history_job_priority_weights.append(history_jobs_map[id]["priority_weight"])
+            self.history_job_budget_consumes.append(history_jobs_map[id]["EPSILON"])
 
     def update_max_time(self, max_time):
         self.queue.put(SchedEvent(max_time, EVENT_KEY.MAX_TIME, {}))
@@ -544,11 +550,12 @@ class Scheduler(object):
 
 def do_one_game(logger, oracle_throughput_path,
                 subtrain_datasets_map, test_datasets_map,
-                jobs_map, reference_max_time,
+                jobs_map, history_jobs_map, reference_max_time,
                 policy_item):
     sched = Scheduler(logger, oracle_throughput_path)
     sched.update_dataset(subtrain_datasets_map, test_datasets_map)
     sched.update_jobs(jobs_map)
+    sched.update_history_jobs(history_jobs_map)
     sched.update_max_time(reference_max_time)
     sched.simulate_start(policy_item)
     sched.clear_all_jobs()
@@ -580,12 +587,15 @@ if __name__ == '__main__':
     oracle_throughput_path = '%s/traces/physical_cluster_throughputs_without_unconsolidated.json' % (prefix_path)
 
     job_num = 500
+    history_num = 500
     lam = 3600.0
     fixed_datablock_select_num = 1
-    jobs_map, reference_max_time = generate_all_jobs(job_num, oracle_throughput_path, lam, 
+    jobs_map, history_jobs_map, reference_max_time = generate_all_jobs(job_num, history_num, oracle_throughput_path, lam, 
                                                     fixed_datablock_select_num=fixed_datablock_select_num)
     subtrain_datasets_map, test_datasets_map = generate_all_subtrain_datablocks(init_dataset_name_2_block_num)
     
+    logger_path = '%s.log' % (logger_path_prefix)
+    logger = get_logger(logger_path, enable_multiprocess=False)
     policies = args.policies.split(":")
     for policy in policies:
         args_product_list = []
@@ -599,30 +609,29 @@ if __name__ == '__main__':
             beta_list = args.his_betas
             gamma_list = args.his_gammas
             delta_list = args.his_deltas
-            args_product_list = [d for d in itertools.product(beta_list, gamma_list, delta_list)]
-        logger_path = '%s.log' % (logger_path_prefix)
-        logger = get_logger(logger_path, enable_multiprocess=False)
+            only_small_flag_list = args.his_only_small_flags
+            args_product_list = [d for d in itertools.product(beta_list, gamma_list, delta_list, only_small_flag_list)]
         if policy == "PBGPolicy":
-            for args in args_product_list:
-                comparison_cost_epsilon, comparison_z_threshold, L, U = args
+            for temp_arg in args_product_list:
+                comparison_cost_epsilon, comparison_z_threshold, L, U = temp_arg
                 policy_item = PBGPolicy(comparison_cost_epsilon, comparison_z_threshold, L, U)
                 do_one_game(logger, oracle_throughput_path,
                             subtrain_datasets_map, test_datasets_map,
-                            jobs_map, reference_max_time,
+                            jobs_map, history_jobs_map, reference_max_time,
                             policy_item)
         elif policy == "HISPolicy":
-            for args in args_product_list:
-                beta, gamma, delta = args
+            for temp_arg in args_product_list:
+                beta, gamma, delta, only_small_flag = temp_arg
                 if beta >= gamma:
                     continue
-                policy_item = HISPolicy(beta, gamma, delta)
+                policy_item = HISPolicy(beta, gamma, delta, only_small_flag)
                 do_one_game(logger, oracle_throughput_path,
                             subtrain_datasets_map, test_datasets_map,
-                            jobs_map, reference_max_time,
+                            jobs_map, history_jobs_map, reference_max_time,
                             policy_item)
         elif policy == "SagePolicy":
             policy_item = SagePolicy()
             do_one_game(logger, oracle_throughput_path,
                         subtrain_datasets_map, test_datasets_map,
-                        jobs_map, reference_max_time,
+                        jobs_map, history_jobs_map, reference_max_time,
                         policy_item)
