@@ -29,11 +29,11 @@ def _generate_privacy_budget(rng):
     privacy_delta = 5e-9
     r = rng.uniform(0, 1)
     if r >= 0.75:
-        privacy_epsilon = 0.5
-    elif 0.25 <= r < 0.75:
         privacy_epsilon = 1.0
+    elif 0.25 <= r < 0.75:
+        privacy_epsilon = 5.0
     elif r < 0.25:
-        privacy_epsilon = 2.0
+        privacy_epsilon = 10.0
     return privacy_epsilon, privacy_delta
 
 def _generate_worker_select_num(rng):

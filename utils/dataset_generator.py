@@ -17,14 +17,14 @@ def _generate_delta_capacity(rng):
     return 4e-6
 
 def _generate_significance(rng):
-    significance = 0.0
+    significance = 0.1
     r = rng.uniform(0, 1)
     if r >= 0.8:
         significance = 1.0
     elif 0.4 <= r < 0.8:
         significance = 0.5
     else:
-        significance = 0.0
+        significance = 0.1
     return significance
 
 def generate_subtrain_datablocks(dataset_name, block_num,

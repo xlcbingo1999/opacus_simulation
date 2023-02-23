@@ -1,7 +1,7 @@
 import logging
 
 def get_logger(logging_file, enable_multiprocess, showing_stdout_level=logging.INFO):
-    logger = logging.getLogger(__name__)
+    logger = logging.getLogger(logging_file)
     logger.setLevel(logging.DEBUG)
     
     file_ch = logging.FileHandler(logging_file)

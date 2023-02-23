@@ -206,7 +206,7 @@ class Scheduler(object):
 
                 self.jobid_2_target_gpu_number[id] = origin_info["worker_select_num"]
                 self.queue.put(SchedEvent(origin_info["time"], EVENT_KEY.JOB_SUBMIT, {"job_id": id}))
-                self.sched_info("success add new job {}".format(id))
+                self.sched_debug("success add new job {}".format(id))
 
     def update_max_time(self, max_time):
         self.queue.put(SchedEvent(max_time, EVENT_KEY.MAX_TIME, {}))

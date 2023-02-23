@@ -3,66 +3,153 @@ import copy
 import random
 import numpy as np
 import math
+from scipy.optimize import linear_sum_assignment
+import cvxpy as cp
 
-class PBGPolicy(Policy):
-    def __init__(self, comparison_cost_epsilon, comparison_z_threshold, L, U):
+class HISPolicy(Policy):
+    def __init__(self, beta, gamma, delta):
         super().__init__()
-        self._name = 'PBGPolicy'
-        self.comparison_cost_epsilon = comparison_cost_epsilon
-        self.comparison_z_threshold = comparison_z_threshold
-        self.L = L
-        self.U = U
+        self._name = 'HISPolicy'
+        self.beta = beta
+        self.gamma = gamma
+        self.delta = delta
 
-    def Lap(self, scale):
-        return np.random.laplace(loc=0.0, scale=scale)
+    def report_state(self, logger):
+        logger.info("policy name: {}".format(self._name))
+        logger.info("policy args: beta: {}".format(self.beta))
+        logger.info("policy args: gamma: {}".format(self.gamma))
+        logger.info("policy args: delta: {}".format(self.delta))
 
-    def Threshold_func(self, datablock_z):
-        if 0.0 <= datablock_z <= self.comparison_z_threshold:
-            return self.L
-        elif self.comparison_z_threshold < datablock_z <= 1.0:
-            return math.pow(self.U * math.exp(1) / self.L, datablock_z) * self.L / math.exp(1)
-        return self.L
+    def get_LP_result(self, sign_matrix, datablock_privacy_budget_capacity_list, job_privacy_budget_consume_list, solver='SCS'):
+        job_num, datablock_num = sign_matrix.shape[0], sign_matrix.shape[1]
+        job_privacy_budget_consume_list = np.array(job_privacy_budget_consume_list)[np.newaxis, :]
+        datablock_privacy_budget_capacity_list = np.array(datablock_privacy_budget_capacity_list)[np.newaxis, :]
 
-    def filter_by_threshold(self, datablock_epsilon_capacity, datablock_z, target_epsilon_consume, significance):
-        if datablock_z < self.comparison_z_threshold:
-            is_select = True
-            new_z = datablock_z + target_epsilon_consume / datablock_epsilon_capacity
-        else:
-            if ((significance / (target_epsilon_consume + self.comparison_cost_epsilon)) + self.Lap(4.0/self.comparison_cost_epsilon) > self.Threshold_func(datablock_z) + self.Lap(2.0/self.comparison_cost_epsilon) 
-            and target_epsilon_consume + self.comparison_cost_epsilon < (1.0 - datablock_z) * datablock_epsilon_capacity):
-                is_select = True
-                new_z = datablock_z + (target_epsilon_consume + self.comparison_cost_epsilon)/datablock_epsilon_capacity
-            else:
-                is_select = False
-                new_z = datablock_z + self.comparison_cost_epsilon/datablock_epsilon_capacity
-        return is_select, new_z
+        matrix_X = cp.Variable((job_num, datablock_num), nonneg=True)
+        objective = cp.Maximize(
+            cp.sum(cp.multiply(sign_matrix, matrix_X))
+        )
+
+        constraints = [
+            matrix_X >= 0,
+            matrix_X <= 1,
+            cp.sum(matrix_X, axis=1) <= 1,
+            (job_privacy_budget_consume_list @ matrix_X) <= datablock_privacy_budget_capacity_list
+        ]
+
+        cvxprob = cp.Problem(objective, constraints)
+        result = cvxprob.solve(solver)
+        # print(matrix_X.value)
+        if cvxprob.status != "optimal":
+            print('WARNING: Allocation returned by policy not optimal!')
+        return matrix_X.value
+
+    def get_sign_matrix(self, is_large_job, current_all_job_significances, sub_train_datasetidentifier_2_significance,
+                        sub_train_datasetidentifier_2_epsilon_capcity,
+                        target_epsilon_require, job_priority_weight):
+        temp_index_2_datablock_identifier = {}
+        sign_matrix = []
+        for job_index, job_priority_weight in enumerate(current_all_job_significances):
+            temp = []
+            for datablock_index, datablock_identifier in enumerate(sub_train_datasetidentifier_2_epsilon_capcity):
+                temp_index_2_datablock_identifier[datablock_index] = datablock_identifier
+                if job_index + 1 < len(current_all_job_significances):
+                    if is_large_job and target_epsilon_require <= self.delta * sub_train_datasetidentifier_2_epsilon_capcity[datablock_identifier]: # 最后一个任务不算进去
+                        temp.append(0.0)
+                    elif (not is_large_job) and target_epsilon_require > self.delta * sub_train_datasetidentifier_2_epsilon_capcity[datablock_identifier]:
+                        temp.append(0.0)
+                    else:
+                        temp.append(sub_train_datasetidentifier_2_significance[datablock_identifier] * job_priority_weight)
+                else:
+                    temp.append(sub_train_datasetidentifier_2_significance[datablock_identifier] * job_priority_weight)
+            sign_matrix.append(temp)
+        sign_matrix = np.array(sign_matrix)
+        return sign_matrix, temp_index_2_datablock_identifier
+
+    def get_allocation_for_large(self, history_job_priority_weights, sub_train_datasetidentifier_2_significance,
+                                sub_train_datasetidentifier_2_epsilon_remain, sub_train_datasetidentifier_2_epsilon_capcity,
+                                index, target_epsilon_require, target_datablock_select_num, job_priority_weight):
+        assert target_datablock_select_num == 1
         
-    def get_allocation(self, sub_train_datasetidentifier_2_significance, 
-                    sub_train_datasetidentifier_2_epsilon_remain, 
-                    sub_train_datasetidentifier_2_epsilon_capcity, 
-                    target_epsilon_consume,
-                    target_datablock_select_num):
-        temp_datasetidentifier_2_epsilon_z = {
-            datasetidentifier: sub_train_datasetidentifier_2_epsilon_remain[datasetidentifier]/sub_train_datasetidentifier_2_epsilon_capcity[datasetidentifier]
-            for datasetidentifier in sub_train_datasetidentifier_2_epsilon_remain
-        }
-        # final_datasetidentifier_2_epsilon_z = {
-        #     datasetidentifier: sub_train_datasetidentifier_2_epsilon_remain[datasetidentifier]/sub_train_datasetidentifier_2_epsilon_capcity[datasetidentifier]
-        #     for datasetidentifier in sub_train_datasetidentifier_2_epsilon_remain
-        # }
-        count = 0
         selected_datablock_identifiers = []
-        while count < target_datablock_select_num and len(temp_datasetidentifier_2_epsilon_z.keys()) > 0:
-            # 获取随机一个数据集
-            datasetidentifier = random.choice(list(temp_datasetidentifier_2_epsilon_z.keys()))
-            datablock_epsilon_capacity = sub_train_datasetidentifier_2_epsilon_capcity[datasetidentifier]
-            datablock_z = temp_datasetidentifier_2_epsilon_z[datasetidentifier]
-            significance = sub_train_datasetidentifier_2_significance[datasetidentifier]
-            
-            is_select, new_z = self.filter_by_threshold(datablock_epsilon_capacity, datablock_z, target_epsilon_consume, significance)
-            if is_select:
-                count += 1
-                selected_datablock_identifiers.append(datasetidentifier)
-            # final_datasetidentifier_2_epsilon_z[datasetidentifier] = new_z
-            del temp_datasetidentifier_2_epsilon_z[datasetidentifier]
-        return selected_datablock_identifiers
+        calcu_compare_epsilon = 0.0
+        
+        current_all_job_significances = copy.deepcopy(history_job_priority_weights) 
+        current_all_job_significances.append(job_priority_weight)
+        sign_matrix, temp_index_2_datablock_identifier = self.get_sign_matrix(
+            True, current_all_job_significances, sub_train_datasetidentifier_2_significance,
+            sub_train_datasetidentifier_2_epsilon_capcity, target_epsilon_require, job_priority_weight
+        )
+        row_inds, col_inds = linear_sum_assignment(sign_matrix)
+        if index in row_inds:
+            target_datablock_index = col_inds[index]
+            target_datablock_identifier = temp_index_2_datablock_identifier[target_datablock_index]
+            if target_epsilon_require <= sub_train_datasetidentifier_2_epsilon_remain[target_datablock_identifier]:
+                selected_datablock_identifiers.append(target_datablock_identifier)
+        
+        return selected_datablock_identifiers, calcu_compare_epsilon
+
+    def get_allocation_for_small(self, history_job_priority_weights, history_job_budget_consumes, sub_train_datasetidentifier_2_significance,
+                                sub_train_datasetidentifier_2_epsilon_remain, sub_train_datasetidentifier_2_epsilon_capcity,
+                                index, target_epsilon_require, target_datablock_select_num, job_priority_weight):
+        assert target_datablock_select_num == 1
+        
+        selected_datablock_identifiers = []
+        calcu_compare_epsilon = 0.0
+        
+        current_all_job_significances = copy.deepcopy(history_job_priority_weights)
+        current_all_job_significances.append(job_priority_weight)
+        current_all_job_budget_consumes = copy.deepcopy(history_job_budget_consumes)
+        current_all_job_budget_consumes.append(target_epsilon_require)
+        sign_matrix, temp_index_2_datablock_identifier = self.get_sign_matrix(
+            False, current_all_job_significances, sub_train_datasetidentifier_2_significance,
+            sub_train_datasetidentifier_2_epsilon_capcity, target_epsilon_require, job_priority_weight
+        )
+        
+        datablock_privacy_budget_capacity_list = np.zeros(shape=sign_matrix.shape[1])
+        for temp_index in temp_index_2_datablock_identifier:
+            datablock_privacy_budget_capacity_list[temp_index] = sub_train_datasetidentifier_2_epsilon_capcity[temp_index_2_datablock_identifier[temp_index]]
+        assign_result_matrix = self.get_LP_result(sign_matrix, datablock_privacy_budget_capacity_list, current_all_job_budget_consumes)
+        job_num, datablock_num = sign_matrix.shape[0], sign_matrix.shape[1]
+        current_job_probability = assign_result_matrix[-1]
+        choose_indexes = []
+        waiting_select_indexes = np.array(range(datablock_num))
+        if sum(current_job_probability) > 0:
+            current_job_probability_norm = current_job_probability / sum(current_job_probability)
+            choose_indexes = np.random.choice(a=waiting_select_indexes, size=target_datablock_select_num, replace=False, p=current_job_probability_norm)
+        else:
+            choose_indexes = np.random.choice(a=waiting_select_indexes, size=target_datablock_select_num, replace=False)
+        for choose_index in choose_indexes:
+            datablock_identifier = temp_index_2_datablock_identifier[choose_index]
+            if target_epsilon_require <= sub_train_datasetidentifier_2_epsilon_remain[datablock_identifier]:
+                selected_datablock_identifiers.append(datablock_identifier)
+        return selected_datablock_identifiers, calcu_compare_epsilon
+
+    def get_allocation(self, state):
+        target_datablock_select_num = state["target_datablock_select_num"]
+        job_arrival_index = state["job_arrival_index"]
+        all_job_sequence_num = state["all_job_sequence_num"]
+        history_job_priority_weights = state["history_job_priority_weights"]
+        history_job_budget_consumes = state["history_job_budget_consumes"]
+
+        sub_train_datasetidentifier_2_significance = state["all_sub_train_datasetidentifier_2_significance"]
+        sub_train_datasetidentifier_2_epsilon_remain = state["all_sub_train_datasetidentifier_2_epsilon_remain"]
+        sub_train_datasetidentifier_2_epsilon_capcity = state["all_sub_train_datasetidentifier_2_epsilon_capcity"]
+        target_epsilon_require = state["target_epsilon_require"]
+        job_priority_weight = state["job_priority_weight"]
+        assert target_datablock_select_num == 1
+        
+        if job_arrival_index <= self.beta * all_job_sequence_num:
+            selected_datablock_identifiers = []
+            calcu_compare_epsilon = 0.0
+        elif self.beta * all_job_sequence_num + 1 <= job_arrival_index <= self.gamma * all_job_sequence_num:
+            selected_datablock_identifiers, \
+                calcu_compare_epsilon = self.get_allocation_for_large(history_job_priority_weights, sub_train_datasetidentifier_2_significance,
+                                sub_train_datasetidentifier_2_epsilon_remain, sub_train_datasetidentifier_2_epsilon_capcity,
+                                job_arrival_index, target_epsilon_require, target_datablock_select_num, job_priority_weight)
+        else:
+            selected_datablock_identifiers, \
+                calcu_compare_epsilon = self.get_allocation_for_small(history_job_priority_weights, history_job_budget_consumes, sub_train_datasetidentifier_2_significance,
+                                sub_train_datasetidentifier_2_epsilon_remain, sub_train_datasetidentifier_2_epsilon_capcity,
+                                job_arrival_index, target_epsilon_require, target_datablock_select_num, job_priority_weight)
+        return selected_datablock_identifiers, calcu_compare_epsilon
