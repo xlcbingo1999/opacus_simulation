@@ -3,13 +3,14 @@ import random
 
 
 class SagePolicy(Policy):
-    def __init__(self):
+    def __init__(self, logger):
         super().__init__()
         self._name = 'SagePolicy'
+        self.logger = logger
 
-    def report_state(self, logger):
-        logger.info("policy name: {}".format(self._name))
-        logger.info("policy args: None")    
+    def report_state(self):
+        self.logger.info("policy name: {}".format(self._name))
+        self.logger.info("policy args: None")    
     
     def get_allocation(self, state):
         sub_train_datasetidentifier_2_significance = state["current_sub_train_datasetidentifier_2_significance"]

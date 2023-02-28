@@ -23,6 +23,8 @@ def get_df_config():
     parser = argparse.ArgumentParser(
                 description='Sweep through lambda values')
     parser.add_argument('--logging_date', type=str, default="20230223")
+    parser.add_argument('--job_num', type=int, default=500)
+    parser.add_argument('--history_job_num', type=int, default=500)
     parser.add_argument('--policies', type=str, default="HISPolicy") # PBGPolicy:SagePolicy:
     parser.add_argument('--pbg_comparison_cost_epsilons', type=float, nargs="+", default=[0.01])
     parser.add_argument('--pbg_comparison_z_thresholds', type=float, nargs="+", default=[0.7])
@@ -252,13 +254,14 @@ class Scheduler(object):
                 # self.jobid_2_target_gpu_number[id] = origin_info["worker_select_num"]
                 self.queue.put(SchedEvent(origin_info["time"], EVENT_KEY.JOB_SUBMIT, {"job_id": id}))
                 count += 1
-                # self.sched_debug("success add new job {}".format(id))
         self.job_sequence_all_num = count
+        self.sched_debug("success add new jobs number: {}".format(self.job_sequence_all_num))
 
     def update_history_jobs(self, history_jobs_map):
         for id in sorted(history_jobs_map):
             self.history_job_priority_weights.append(history_jobs_map[id]["priority_weight"])
             self.history_job_budget_consumes.append(history_jobs_map[id]["EPSILON"])
+        self.sched_debug("success add new history jobs number: {}".format(len(history_jobs_map)))
 
     def update_max_time(self, max_time):
         self.queue.put(SchedEvent(max_time, EVENT_KEY.MAX_TIME, {}))
@@ -274,7 +277,7 @@ class Scheduler(object):
         self.history_job_budget_consumes.append(self.jobid_2_target_epsilon[job_id])
 
     def worker_finished_job_callback(self, job_id):
-        self.sched_info("Scheduler: Job {job_id} Finished".format(job_id=job_id))
+        # self.sched_info("Scheduler: Job {job_id} Finished".format(job_id=job_id))
         dataset_name = self.jobid_2_datasettargetconfig[job_id]["dataset_name"]
         selected_datablock_identifiers = self.jobid_2_datasettargetconfig[job_id]["selected_datablock_identifiers"]
         significance_results = []
@@ -314,11 +317,11 @@ class Scheduler(object):
         self.sched_info("self.status_2_jobid")
         for status in self.status_2_jobid:
             self.sched_info("status_2_jobid[{}]: {}".format(status, self.status_2_jobid[status]))
-        self.sched_info("self.jobid_2_results")
+        # self.sched_info("self.jobid_2_results")
         all_significance = 0.0
         for job_id in self.jobid_2_results:
             if self.jobid_2_results[job_id] is not None:
-                self.sched_info("jobid_2_results[{}]: {}".format(job_id, self.jobid_2_results[job_id]))
+                # self.sched_info("jobid_2_results[{}]: {}".format(job_id, self.jobid_2_results[job_id]))
                 all_significance += self.jobid_2_results[job_id]["significance"]
         # self.sched_info("self.jobid_2_gputarget: {}".format(self.jobid_2_gputarget))
         # self.sched_info("self.sub_train_datasetidentifier_2_dataset_status")
@@ -507,6 +510,7 @@ class Scheduler(object):
             self.sche_reflash_job_status(job_id, JOB_STATUS_KEY.DONE_ALL_SCHED, JOB_STATUS_KEY.RUNNING)
 
         if need_failed_job:
+            self.sched_debug("failed job [{}]".format(job_id))
             status_update_path, target_status = self.get_target_job_status_update_path_and_status(job_id, "failed")
             origin_status, target_status = self.get_job_status_update_origin_target(status_update_path)
             self.sche_reflash_job_status(job_id, origin_status, target_status)
@@ -516,7 +520,7 @@ class Scheduler(object):
 
     def simulate_start(self, policy):
         self.logger.info("POLICY {} START!".format(policy.name))
-        policy.report_state(self.logger)
+        policy.report_state()
         next_event = self.queue.get()
         next_time = next_event.priority
         self.global_time = next_time
@@ -586,8 +590,8 @@ if __name__ == '__main__':
     logger_path_prefix = '%s/%s' % (result_log_dir_path, file_log_name)
     oracle_throughput_path = '%s/traces/physical_cluster_throughputs_without_unconsolidated.json' % (prefix_path)
 
-    job_num = 500
-    history_num = 500
+    job_num = args.job_num
+    history_num = args.history_job_num
     lam = 3600.0
     fixed_datablock_select_num = 1
     jobs_map, history_jobs_map, reference_max_time = generate_all_jobs(job_num, history_num, oracle_throughput_path, lam, 
@@ -614,7 +618,7 @@ if __name__ == '__main__':
         if policy == "PBGPolicy":
             for temp_arg in args_product_list:
                 comparison_cost_epsilon, comparison_z_threshold, L, U = temp_arg
-                policy_item = PBGPolicy(comparison_cost_epsilon, comparison_z_threshold, L, U)
+                policy_item = PBGPolicy(comparison_cost_epsilon, comparison_z_threshold, L, U, logger)
                 do_one_game(logger, oracle_throughput_path,
                             subtrain_datasets_map, test_datasets_map,
                             jobs_map, history_jobs_map, reference_max_time,
@@ -624,13 +628,13 @@ if __name__ == '__main__':
                 beta, gamma, delta, only_small_flag = temp_arg
                 if beta >= gamma:
                     continue
-                policy_item = HISPolicy(beta, gamma, delta, only_small_flag)
+                policy_item = HISPolicy(beta, gamma, delta, only_small_flag, logger)
                 do_one_game(logger, oracle_throughput_path,
                             subtrain_datasets_map, test_datasets_map,
                             jobs_map, history_jobs_map, reference_max_time,
                             policy_item)
         elif policy == "SagePolicy":
-            policy_item = SagePolicy()
+            policy_item = SagePolicy(logger)
             do_one_game(logger, oracle_throughput_path,
                         subtrain_datasets_map, test_datasets_map,
                         jobs_map, history_jobs_map, reference_max_time,

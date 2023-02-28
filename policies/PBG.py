@@ -5,20 +5,21 @@ import numpy as np
 import math
 
 class PBGPolicy(Policy):
-    def __init__(self, comparison_cost_epsilon, comparison_z_threshold, L, U):
+    def __init__(self, comparison_cost_epsilon, comparison_z_threshold, L, U, logger):
         super().__init__()
         self._name = 'PBGPolicy'
         self.comparison_cost_epsilon = comparison_cost_epsilon
         self.comparison_z_threshold = comparison_z_threshold
         self.L = L
         self.U = U
+        self.logger = logger
 
-    def report_state(self, logger):
-        logger.info("policy name: {}".format(self._name))
-        logger.info("policy args: comparison_cost_epsilon: {}".format(self.comparison_cost_epsilon))
-        logger.info("policy args: comparison_z_threshold: {}".format(self.comparison_z_threshold))
-        logger.info("policy args: L: {}".format(self.L))
-        logger.info("policy args: U: {}".format(self.U))
+    def report_state(self):
+        self.logger.info("policy name: {}".format(self._name))
+        self.logger.info("policy args: comparison_cost_epsilon: {}".format(self.comparison_cost_epsilon))
+        self.logger.info("policy args: comparison_z_threshold: {}".format(self.comparison_z_threshold))
+        self.logger.info("policy args: L: {}".format(self.L))
+        self.logger.info("policy args: U: {}".format(self.U))
 
     def Lap(self, scale):
         return np.random.laplace(loc=0.0, scale=scale)

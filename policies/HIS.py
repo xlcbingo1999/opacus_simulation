@@ -7,20 +7,21 @@ from scipy.optimize import linear_sum_assignment
 import cvxpy as cp
 
 class HISPolicy(Policy):
-    def __init__(self, beta, gamma, delta, only_small):
+    def __init__(self, beta, gamma, delta, only_small, logger):
         super().__init__()
         self._name = 'HISPolicy'
         self.beta = beta
         self.gamma = gamma
         self.delta = delta
         self.only_small = only_small
+        self.logger = logger
 
-    def report_state(self, logger):
-        logger.info("policy name: {}".format(self._name))
-        logger.info("policy args: beta: {}".format(self.beta))
-        logger.info("policy args: gamma: {}".format(self.gamma))
-        logger.info("policy args: delta: {}".format(self.delta))
-        logger.info("policy args: only_small: {}".format(self.only_small))
+    def report_state(self):
+        self.logger.info("policy name: {}".format(self._name))
+        self.logger.info("policy args: beta: {}".format(self.beta))
+        self.logger.info("policy args: gamma: {}".format(self.gamma))
+        self.logger.info("policy args: delta: {}".format(self.delta))
+        self.logger.info("policy args: only_small: {}".format(self.only_small))
 
     def get_LP_result(self, sign_matrix, datablock_privacy_budget_capacity_list, job_privacy_budget_consume_list, solver='SCS'):
         job_num, datablock_num = sign_matrix.shape[0], sign_matrix.shape[1]
@@ -115,12 +116,18 @@ class HISPolicy(Policy):
         job_num, datablock_num = sign_matrix.shape[0], sign_matrix.shape[1]
         current_job_probability = assign_result_matrix[-1] # 这里其实相当于算出了一个分数, 如果为了这个分数不被泄露, 可以用指数机制加噪, 该方案被证实为满足DP-差分隐私.
         choose_indexes = []
-        waiting_select_indexes = np.array(range(datablock_num))
-        if sum(current_job_probability) > 0:
-            current_job_probability_norm = current_job_probability / sum(current_job_probability)
-            choose_indexes = np.random.choice(a=waiting_select_indexes, size=target_datablock_select_num, replace=False, p=current_job_probability_norm)
+        waiting_select_indexes = np.array(range(datablock_num + 1))
+        current_job_probability = list(current_job_probability)
+        current_job_probability.append(1.0 - sum(current_job_probability))
+        current_job_probability = [proba if proba > 0.0 else 0.0 for proba in current_job_probability]
+        current_job_probability = current_job_probability / sum(current_job_probability)
+        null_index = len(current_job_probability) - 1
+        temp_result = list(np.random.choice(a=waiting_select_indexes, size=target_datablock_select_num, replace=False, p=current_job_probability))
+        if null_index in temp_result:
+            choose_indexes = copy.deepcopy(temp_result)
+            choose_indexes.remove(null_index)
         else:
-            choose_indexes = np.random.choice(a=waiting_select_indexes, size=target_datablock_select_num, replace=False)
+            choose_indexes = copy.deepcopy(temp_result)
         for choose_index in choose_indexes:
             datablock_identifier = temp_index_2_datablock_identifier[choose_index]
             if target_epsilon_require <= sub_train_datasetidentifier_2_epsilon_remain[datablock_identifier]:
