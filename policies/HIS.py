@@ -15,6 +15,7 @@ class HISPolicy(Policy):
         self.delta = delta
         self.only_small = only_small
         self.logger = logger
+        self.waiting_queue_capacity = 1
 
     def report_state(self):
         self.logger.info("policy name: {}".format(self._name))
@@ -23,7 +24,7 @@ class HISPolicy(Policy):
         self.logger.info("policy args: delta: {}".format(self.delta))
         self.logger.info("policy args: only_small: {}".format(self.only_small))
 
-    def get_LP_result(self, sign_matrix, datablock_privacy_budget_capacity_list, job_privacy_budget_consume_list, solver='SCS'):
+    def get_LP_result(self, sign_matrix, datablock_privacy_budget_capacity_list, job_privacy_budget_consume_list, solver=cp.ECOS):
         job_num, datablock_num = sign_matrix.shape[0], sign_matrix.shape[1]
         job_privacy_budget_consume_list = np.array(job_privacy_budget_consume_list)[np.newaxis, :]
         datablock_privacy_budget_capacity_list = np.array(datablock_privacy_budget_capacity_list)[np.newaxis, :]
@@ -72,7 +73,7 @@ class HISPolicy(Policy):
     def get_allocation_for_large(self, history_job_priority_weights, sub_train_datasetidentifier_2_significance,
                                 sub_train_datasetidentifier_2_epsilon_remain, sub_train_datasetidentifier_2_epsilon_capcity,
                                 index, target_epsilon_require, target_datablock_select_num, job_priority_weight):
-        assert target_datablock_select_num == 1
+        # assert target_datablock_select_num == 1
         
         selected_datablock_identifiers = []
         calcu_compare_epsilon = 0.0
@@ -95,7 +96,7 @@ class HISPolicy(Policy):
     def get_allocation_for_small(self, history_job_priority_weights, history_job_budget_consumes, sub_train_datasetidentifier_2_significance,
                                 sub_train_datasetidentifier_2_epsilon_remain, sub_train_datasetidentifier_2_epsilon_capcity,
                                 index, target_epsilon_require, target_datablock_select_num, job_priority_weight):
-        assert target_datablock_select_num == 1
+        # assert target_datablock_select_num == 1
         
         selected_datablock_identifiers = []
         calcu_compare_epsilon = 0.0
@@ -122,7 +123,16 @@ class HISPolicy(Policy):
         current_job_probability = [proba if proba > 0.0 else 0.0 for proba in current_job_probability]
         current_job_probability = current_job_probability / sum(current_job_probability)
         null_index = len(current_job_probability) - 1
-        temp_result = list(np.random.choice(a=waiting_select_indexes, size=target_datablock_select_num, replace=False, p=current_job_probability))
+        result_select_num = target_datablock_select_num
+        if len(waiting_select_indexes) < target_datablock_select_num:
+            result_select_num = len(waiting_select_indexes)
+        probability_enable_num = sum(p > 0.0 for p in current_job_probability)
+        if probability_enable_num < result_select_num:
+            result_select_num = probability_enable_num
+        # print("check result_select_num: ", result_select_num)
+        # print("check waiting_select_indexes: ", waiting_select_indexes)
+        # print("check current_job_probability: ", current_job_probability)
+        temp_result = list(np.random.choice(a=waiting_select_indexes, size=result_select_num, replace=False, p=current_job_probability))
         if null_index in temp_result:
             choose_indexes = copy.deepcopy(temp_result)
             choose_indexes.remove(null_index)
@@ -135,19 +145,27 @@ class HISPolicy(Policy):
         return selected_datablock_identifiers, calcu_compare_epsilon
 
     def get_allocation(self, state):
-        target_datablock_select_num = state["target_datablock_select_num"]
+        job_id_2_target_dataset_name = state["job_id_2_target_dataset_name"]
+        assert len(job_id_2_target_dataset_name) == 1
+        set_job_id = set(job_id_2_target_dataset_name.keys())
+        set_dataset_name = set(job_id_2_target_dataset_name.values())
+        assert len(set_dataset_name) == 1 # 必须保证所有的任务都是针对同一个数据集的
+        job_id = list(set_job_id)[0]
+        target_dataset_name = list(set_dataset_name)[0]
+
+        sub_train_datasetidentifier_2_significance = state["current_sub_train_datasetidentifier_2_significance"][target_dataset_name]
+        sub_train_datasetidentifier_2_epsilon_remain = state["current_sub_train_datasetidentifier_2_epsilon_remain"][target_dataset_name]
+        sub_train_datasetidentifier_2_epsilon_capcity = state["current_sub_train_datasetidentifier_2_epsilon_capcity"][target_dataset_name]
+        target_epsilon_require = state["job_id_2_target_epsilon_require"][job_id]
+        target_datablock_select_num = state["job_id_2_target_datablock_select_num"][job_id]
+        job_priority_weight = state["job_id_2_job_priority_weight"][job_id]
+
         job_arrival_index = state["job_arrival_index"]
         all_job_sequence_num = state["all_job_sequence_num"]
         history_job_priority_weights = state["history_job_priority_weights"]
         history_job_budget_consumes = state["history_job_budget_consumes"]
 
-        sub_train_datasetidentifier_2_significance = state["all_sub_train_datasetidentifier_2_significance"]
-        sub_train_datasetidentifier_2_epsilon_remain = state["all_sub_train_datasetidentifier_2_epsilon_remain"]
-        sub_train_datasetidentifier_2_epsilon_capcity = state["all_sub_train_datasetidentifier_2_epsilon_capcity"]
-        target_epsilon_require = state["target_epsilon_require"]
-        job_priority_weight = state["job_priority_weight"]
-
-        assert target_datablock_select_num == 1
+        # assert target_datablock_select_num == 1
         
         if len(history_job_priority_weights) < all_job_sequence_num:
             sample_history_job_priority_weights = history_job_priority_weights
@@ -180,4 +198,7 @@ class HISPolicy(Policy):
                     calcu_compare_epsilon = self.get_allocation_for_small(sample_history_job_priority_weights, sample_history_job_budget_consumes, sub_train_datasetidentifier_2_significance,
                                     sub_train_datasetidentifier_2_epsilon_remain, sub_train_datasetidentifier_2_epsilon_capcity,
                                     job_arrival_index, target_epsilon_require, target_datablock_select_num, job_priority_weight)
-        return selected_datablock_identifiers, calcu_compare_epsilon
+        job_2_selected_datablock_identifiers = [
+            (job_id, identifier) for identifier in selected_datablock_identifiers
+        ]
+        return job_2_selected_datablock_identifiers, calcu_compare_epsilon

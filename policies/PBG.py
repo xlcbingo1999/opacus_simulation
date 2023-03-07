@@ -13,6 +13,7 @@ class PBGPolicy(Policy):
         self.L = L
         self.U = U
         self.logger = logger
+        self.waiting_queue_capacity = 1
 
     def report_state(self):
         self.logger.info("policy name: {}".format(self._name))
@@ -37,24 +38,40 @@ class PBGPolicy(Policy):
             # new_z = datablock_z + target_epsilon_consume / datablock_epsilon_capacity
             compare_epsilon = 0.0
         else:
-            if ((significance_plus_weight / (target_epsilon_consume + self.comparison_cost_epsilon)) + self.Lap(4.0/self.comparison_cost_epsilon) > self.Threshold_func(datablock_z) + self.Lap(2.0/self.comparison_cost_epsilon) 
-            and target_epsilon_consume + self.comparison_cost_epsilon < (1.0 - datablock_z) * datablock_epsilon_capacity):
-                is_select = True
-                # new_z = datablock_z + (target_epsilon_consume + self.comparison_cost_epsilon)/datablock_epsilon_capacity
-                compare_epsilon = self.comparison_cost_epsilon
+            if self.comparison_cost_epsilon > 0.0:
+                if ((significance_plus_weight / (target_epsilon_consume + self.comparison_cost_epsilon)) + self.Lap(4.0/self.comparison_cost_epsilon) > self.Threshold_func(datablock_z) + self.Lap(2.0/self.comparison_cost_epsilon) 
+                and target_epsilon_consume + self.comparison_cost_epsilon < (1.0 - datablock_z) * datablock_epsilon_capacity):
+                    is_select = True
+                    compare_epsilon = self.comparison_cost_epsilon
+                
+                else:
+                    is_select = False
+                    compare_epsilon = 0.0
             else:
-                is_select = False
-                # new_z = datablock_z
-                compare_epsilon = 0.0
+                if ((significance_plus_weight / target_epsilon_consume) > self.Threshold_func(datablock_z)
+                and target_epsilon_consume < (1.0 - datablock_z) * datablock_epsilon_capacity):
+                    is_select = True
+                    compare_epsilon = 0.0
+                else:
+                    is_select = False
+                    compare_epsilon = 0.0
         return is_select, compare_epsilon
         
     def get_allocation(self, state):
-        sub_train_datasetidentifier_2_significance = state["current_sub_train_datasetidentifier_2_significance"]
-        sub_train_datasetidentifier_2_epsilon_remain = state["current_sub_train_datasetidentifier_2_epsilon_remain"]
-        sub_train_datasetidentifier_2_epsilon_capcity = state["current_sub_train_datasetidentifier_2_epsilon_capcity"]
-        target_epsilon_require = state["target_epsilon_require"]
-        target_datablock_select_num = state["target_datablock_select_num"]
-        job_priority_weight = state["job_priority_weight"]
+        job_id_2_target_dataset_name = state["job_id_2_target_dataset_name"]
+        assert len(job_id_2_target_dataset_name) == 1
+        set_job_id = set(job_id_2_target_dataset_name.keys())
+        set_dataset_name = set(job_id_2_target_dataset_name.values())
+        assert len(set_dataset_name) == 1 # 必须保证所有的任务都是针对同一个数据集的
+        job_id = list(set_job_id)[0]
+        target_dataset_name = list(set_dataset_name)[0]
+        
+        sub_train_datasetidentifier_2_significance = state["current_sub_train_datasetidentifier_2_significance"][target_dataset_name]
+        sub_train_datasetidentifier_2_epsilon_remain = state["current_sub_train_datasetidentifier_2_epsilon_remain"][target_dataset_name]
+        sub_train_datasetidentifier_2_epsilon_capcity = state["current_sub_train_datasetidentifier_2_epsilon_capcity"][target_dataset_name]
+        target_epsilon_require = state["job_id_2_target_epsilon_require"][job_id]
+        target_datablock_select_num = state["job_id_2_target_datablock_select_num"][job_id]
+        job_priority_weight = state["job_id_2_job_priority_weight"][job_id]
 
         temp_datasetidentifier_2_epsilon_z = {
             datasetidentifier: 1.0-sub_train_datasetidentifier_2_epsilon_remain[datasetidentifier]/sub_train_datasetidentifier_2_epsilon_capcity[datasetidentifier]
@@ -78,4 +95,7 @@ class PBGPolicy(Policy):
                 calcu_compare_epsilon += compare_epsilon
             del temp_datasetidentifier_2_epsilon_z[datasetidentifier]
         
-        return selected_datablock_identifiers, calcu_compare_epsilon
+        job_2_selected_datablock_identifiers = [
+            (job_id, identifier) for identifier in selected_datablock_identifiers
+        ]
+        return job_2_selected_datablock_identifiers, calcu_compare_epsilon

@@ -40,24 +40,24 @@ def _generate_worker_select_num(rng):
     # Sample the scale factor from the Philly distribution.
     select_num = 1
     r = rng.uniform(0, 1)
-    if 0.7 <= r <= 0.8:
+    if 0.8 <= r <= 0.9:
         select_num = 2
-    elif 0.8 <= r <= 0.95:
+    elif 0.91 <= r <= 0.98:
         select_num = 4
-    elif 0.95 <= r:
+    elif 0.99 <= r:
         select_num = 8
     return select_num
 
 def _generate_datablock_select_num(rng):
     num = 1
     r = rng.uniform(0, 1)
-    if 0.7 <= r <= 0.8:
+    if 0.85 <= r <= 0.9:
         num = 2
-    elif 0.8 <= r <= 0.95:
+    elif 0.91 <= r <= 0.98:
         num = 4
-    elif 0.95 <= r:
+    elif 0.99 <= r:
         num = 8
-    return 
+    return num
 
 def _generate_SLO(rng):
     SLO = 1.0

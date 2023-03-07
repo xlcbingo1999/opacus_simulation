@@ -7,18 +7,27 @@ class SagePolicy(Policy):
         super().__init__()
         self._name = 'SagePolicy'
         self.logger = logger
+        self.waiting_queue_capacity = 1
 
     def report_state(self):
         self.logger.info("policy name: {}".format(self._name))
         self.logger.info("policy args: None")    
     
     def get_allocation(self, state):
-        sub_train_datasetidentifier_2_significance = state["current_sub_train_datasetidentifier_2_significance"]
-        sub_train_datasetidentifier_2_epsilon_remain = state["current_sub_train_datasetidentifier_2_epsilon_remain"]
-        sub_train_datasetidentifier_2_epsilon_capcity = state["current_sub_train_datasetidentifier_2_epsilon_capcity"]
-        target_epsilon_require = state["target_epsilon_require"]
-        target_datablock_select_num = state["target_datablock_select_num"]
-        job_priority_weight = state["job_priority_weight"]
+        job_id_2_target_dataset_name = state["job_id_2_target_dataset_name"]
+        assert len(job_id_2_target_dataset_name) == 1
+        set_job_id = set(job_id_2_target_dataset_name.keys())
+        set_dataset_name = set(job_id_2_target_dataset_name.values())
+        assert len(set_dataset_name) == 1 # 必须保证所有的任务都是针对同一个数据集的
+        job_id = list(set_job_id)[0]
+        target_dataset_name = list(set_dataset_name)[0]
+        
+        sub_train_datasetidentifier_2_significance = state["current_sub_train_datasetidentifier_2_significance"][target_dataset_name]
+        sub_train_datasetidentifier_2_epsilon_remain = state["current_sub_train_datasetidentifier_2_epsilon_remain"][target_dataset_name]
+        sub_train_datasetidentifier_2_epsilon_capcity = state["current_sub_train_datasetidentifier_2_epsilon_capcity"][target_dataset_name]
+        target_epsilon_require = state["job_id_2_target_epsilon_require"][job_id]
+        target_datablock_select_num = state["job_id_2_target_datablock_select_num"][job_id]
+        job_priority_weight = state["job_id_2_job_priority_weight"][job_id]
         
         temp_datasetidentifier_2_epsilon_z = {
             datasetidentifier: sub_train_datasetidentifier_2_epsilon_remain[datasetidentifier]/sub_train_datasetidentifier_2_epsilon_capcity[datasetidentifier]
@@ -40,4 +49,8 @@ class SagePolicy(Policy):
             # final_datasetidentifier_2_epsilon_z[datasetidentifier] = new_z
             del temp_datasetidentifier_2_epsilon_z[datasetidentifier]
             count += 1
-        return selected_datablock_identifiers, calcu_compare_epsilon
+
+        job_2_selected_datablock_identifiers = [
+            (job_id, identifier) for identifier in selected_datablock_identifiers
+        ]
+        return job_2_selected_datablock_identifiers, calcu_compare_epsilon
