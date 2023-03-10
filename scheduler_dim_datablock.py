@@ -2,7 +2,7 @@ from utils.global_functions import JOB_STATUS_KEY, DATASET_STATUS_KEY, JOB_STATU
 from utils.global_varible import GLOBAL_PATH
 from utils.get_profiler_significance import get_profiler_selection_result
 from utils.logging_tools import get_logger
-from utils.throughput_reader import read_all_throughputs_json_v2
+from utils.throughput_reader import read_all_throughputs_json_v2, read_all_accuracy_json
 from utils.job_generator import generate_all_jobs
 from utils.dataset_generator import generate_all_subtrain_datablocks
 
@@ -27,18 +27,19 @@ def get_df_config():
     parser.add_argument('--logging_date', type=str, default="20230305")
     parser.add_argument('--job_num', type=int, default=500)
     parser.add_argument('--history_job_num', type=int, default=500)
-    parser.add_argument('--datablock_num', type=int, default=10)
+    parser.add_argument('--train_type_num', type=int, default=10)
+    parser.add_argument('--test_type_num', type=int, default=3)
     parser.add_argument('--fixed_datablock_select_num', type=int, default=None)
-    parser.add_argument('--policies', type=str, default="DPFHISPolicy:HISPolicy:PBGPolicy:SagePolicy") # PBGPolicy:SagePolicy:DPFHISPolicy
+    parser.add_argument('--policies', type=str, default="HISPolicy:DPFHISPolicy:PBGPolicy:SagePolicy") # PBGPolicy:SagePolicy:DPFHISPolicy
     parser.add_argument('--pbg_comparison_cost_epsilons', type=float, nargs="+", default=[0.0])
     parser.add_argument('--pbg_comparison_z_thresholds', type=float, nargs="+", default=[0.7])
     parser.add_argument('--pbg_Ls', type=float, nargs="+", default=[0.01])
     parser.add_argument('--pbg_Us', type=float, nargs="+", default=[10.0])
 
     parser.add_argument('--his_betas', type=float, nargs="+", default=[0.01])
-    parser.add_argument('--his_gammas', type=float, nargs="+", default=[0.5])
-    parser.add_argument('--his_deltas', type=float, nargs="+", default=[0.5])
-    parser.add_argument('--his_only_small_flags', type=bool, nargs="+", default=[True])
+    # parser.add_argument('--his_gammas', type=float, nargs="+", default=[0.5])
+    # parser.add_argument('--his_deltas', type=float, nargs="+", default=[0.5])
+    # parser.add_argument('--his_only_small_flags', type=bool, nargs="+", default=[True])
 
     parser.add_argument('--dpf_his_betas', type=float, nargs="+", default=[0.01])
     parser.add_argument('--dpf_his_waiting_queue_capacitys', type=int, nargs="+", default=[10])
@@ -59,7 +60,7 @@ class SchedEvent(object):
         return '(' + str(self.priority)+',\'' + self.event_key + '\')'
 
 class Scheduler(object):
-    def __init__(self, logger, oracle_throughput_path, seed=0):
+    def __init__(self, logger, oracle_throughput_path, accuracy_result_path, seed=0):
         self.global_time = 0
         self.queue = PriorityQueue()
         self.all_finished = False
@@ -76,6 +77,7 @@ class Scheduler(object):
         self.sub_train_datasetidentifier_2_epsilon_remain = {}
         self.sub_train_datasetidentifier_2_submited_time = {}
         self.sub_train_datasetidentifier_2_exhausted_time = {}
+        self.sub_train_datasetidentifier_2_train_type = {}
         self.test_datasetname_2_metadata = {}
         
         self.jobid_2_status = {} # 0: no sche; 1: sched target decide; 2: runnning; 3: success finished; 4: failed;
@@ -97,23 +99,24 @@ class Scheduler(object):
         self.jobid_2_real_epsilon = {}
         self.jobid_2_priority_weight = {}
 
-        '''
-        self.jobid_2_gputarget = {}
-        self.jobid_2_target_gpu_number = {}
-        '''
-
         self.jobid_2_submited_time = {}
         self.jobid_2_started_time = {}
         self.jobid_2_finished_time = {}
+        self.jobid_2_target_dataset_name = {}
+        self.jobid_2_test_type = {}
+        self.jobid_2_significance = {}
 
         self.job_sequence_all_num = 0
         self.current_job_arrival_index = -1
         self.history_job_priority_weights = []
         self.history_job_budget_consumes = []
+        self.history_job_target_dataset_name = []
+        self.history_job_test_type = []
+        self.history_job_significance = []
 
         self.logger = logger
         self.oracle_throughputs = read_all_throughputs_json_v2(oracle_throughput_path)
-
+        self.result_accuracy = read_all_accuracy_json(accuracy_result_path)
         self.initialize_seeds(seed)
         
     def initialize_seeds(self, seed):
@@ -157,11 +160,9 @@ class Scheduler(object):
         self.jobid_2_target_epsilon = {}
         self.jobid_2_real_epsilon = {}
         self.jobid_2_priority_weight = {}
-
-        '''
-        self.jobid_2_gputarget = {}
-        self.jobid_2_target_gpu_number = {}
-        '''
+        self.jobid_2_target_dataset_name = {}
+        self.jobid_2_test_type = {}
+        self.jobid_2_significance = {}
 
         self.jobid_2_submited_time = {}
         self.jobid_2_started_time = {}
@@ -171,6 +172,9 @@ class Scheduler(object):
         self.current_job_arrival_index = -1
         self.history_job_priority_weights = []
         self.history_job_budget_consumes = []
+        self.history_job_target_dataset_name = []
+        self.history_job_test_type = []
+        self.history_job_significance = []
 
         self.sched_info("success clear all jobs")
 
@@ -181,6 +185,7 @@ class Scheduler(object):
         self.sub_train_datasetidentifier_2_epsilon_remain = {}
         self.sub_train_datasetidentifier_2_submited_time = {}
         self.sub_train_datasetidentifier_2_exhausted_time = {}
+        self.sub_train_datasetidentifier_2_train_type = {}
         self.test_datasetname_2_metadata = {}
         self.sched_info("success clear all datasets")
 
@@ -214,6 +219,7 @@ class Scheduler(object):
                 self.sub_train_datasetidentifier_2_epsilon_remain[init_dataset_name] = {}
                 self.sub_train_datasetidentifier_2_submited_time[init_dataset_name] = {}
                 self.sub_train_datasetidentifier_2_exhausted_time[init_dataset_name] = {}
+                self.sub_train_datasetidentifier_2_train_type[init_dataset_name] = {}
             
             for identifier in dataset_identifier_2_capacity_map:
                 if identifier not in init_subtrain_datasets_map[init_dataset_name]:
@@ -227,6 +233,7 @@ class Scheduler(object):
                 self.sub_train_datasetidentifier_2_epsilon_capacity[init_dataset_name][identifier] = dataset_identifier_2_capacity_map[identifier]
                 self.sub_train_datasetidentifier_2_epsilon_remain[init_dataset_name][identifier] = dataset_identifier_2_capacity_map[identifier]
                 self.sub_train_datasetidentifier_2_submited_time[init_dataset_name][identifier] = self.global_time
+                self.sub_train_datasetidentifier_2_train_type[init_dataset_name][identifier] = init_subtrain_datasets_map[init_dataset_name][identifier]["train_type"]
                 # self.sched_info("sucess update dataset [{}-{}]".format(init_dataset_name, identifier))
 
     '''
@@ -237,7 +244,7 @@ class Scheduler(object):
             self.gputype_2_gpu_status[gpu_type] = True # TODO(xlc): 没有将GPU设置为False的操作
     '''
 
-    def update_jobs(self, jobs_detail_map): # 每次可以增加一批任务
+    def update_jobs(self, jobs_detail_map, policy): # 每次可以增加一批任务
         count = 0
         for id in jobs_detail_map:
             origin_info = jobs_detail_map[id]
@@ -250,14 +257,24 @@ class Scheduler(object):
                 self.jobid_2_results[id] = None
                 self.jobid_2_origininfo[id] = origin_info
                 # self.jobid_2_gputarget[id] = None
-                self.jobid_2_datasettargetconfig[id] = {
-                    "dataset_name": origin_info["dataset_name"],
-                }
+                self.jobid_2_datasettargetconfig[id] = {}
                 self.jobid_2_trainconfig[id] = {}
-                self.jobid_2_target_epsilon[id] = origin_info["EPSILON"]
+                target_epsilon_consume = origin_info["EPSILON"]
+                self.jobid_2_target_epsilon[id] = target_epsilon_consume
                 self.jobid_2_real_epsilon[id] = 0
                 self.jobid_2_submited_time[id] = origin_info["time"]
                 self.jobid_2_priority_weight[id] = origin_info["priority_weight"]
+                target_dataset_name = origin_info["dataset_name"]
+                self.jobid_2_target_dataset_name[id] = target_dataset_name
+                test_type = origin_info["test_type"]
+                self.jobid_2_test_type[id] = test_type
+                sub_train_datasetidentifier_2_significance = {}
+                if policy.significance_enable:
+                    for datablock_identifier in self.sub_train_datasetidentifier_2_dataset_status[target_dataset_name]:
+                        train_type = self.sub_train_datasetidentifier_2_train_type[target_dataset_name][datablock_identifier]
+                        signficance_state = self.get_significance_state(policy, target_dataset_name, train_type, test_type, target_epsilon_consume)
+                        sub_train_datasetidentifier_2_significance[datablock_identifier] = policy.get_job_datablock_signficance(signficance_state)
+                self.jobid_2_significance[id] = sub_train_datasetidentifier_2_significance
 
                 # self.jobid_2_target_gpu_number[id] = origin_info["worker_select_num"]
                 self.queue.put(SchedEvent(origin_info["time"], EVENT_KEY.JOB_SUBMIT, {"job_id": id}))
@@ -265,11 +282,35 @@ class Scheduler(object):
         self.job_sequence_all_num = count
         self.sched_debug("success add new jobs number: {}".format(self.job_sequence_all_num))
 
-    def update_history_jobs(self, history_jobs_map):
+    def update_history_jobs(self, history_jobs_map, policy):
         for id in sorted(history_jobs_map):
             self.history_job_priority_weights.append(history_jobs_map[id]["priority_weight"])
-            self.history_job_budget_consumes.append(history_jobs_map[id]["EPSILON"])
+            target_epsilon_consume = history_jobs_map[id]["EPSILON"]
+            self.history_job_budget_consumes.append(target_epsilon_consume)
+            target_dataset_name = history_jobs_map[id]["dataset_name"]
+            self.history_job_target_dataset_name.append(target_dataset_name)
+            test_type = history_jobs_map[id]["test_type"]
+            self.history_job_test_type.append(test_type)
+            sub_train_datasetidentifier_2_significance = {}
+            if policy.significance_enable:
+                for datablock_identifier in self.sub_train_datasetidentifier_2_dataset_status[target_dataset_name]:
+                    train_type = self.sub_train_datasetidentifier_2_train_type[target_dataset_name][datablock_identifier]
+                    signficance_state = self.get_significance_state(policy, target_dataset_name, train_type, test_type, target_epsilon_consume)
+                    sub_train_datasetidentifier_2_significance[datablock_identifier] = policy.get_job_datablock_signficance(signficance_state)
+            self.history_job_significance.append(sub_train_datasetidentifier_2_significance)
         self.sched_debug("success add new history jobs number: {}".format(len(history_jobs_map)))
+
+    def sche_timely_update_history_job(self, priority_weight, EPSILON, dataset_name, test_type, significance):
+        self.history_job_priority_weights.append(priority_weight)
+        self.history_job_budget_consumes.append(EPSILON)
+        self.history_job_target_dataset_name.append(dataset_name)
+        self.history_job_test_type.append(test_type)
+        self.history_job_significance.append(significance)
+        self.sched_debug("success add a new history job")
+
+    def get_job_profiler_accuracy(self, target_dataset_name, train_type, test_type, model_name, epsilon_train):
+        # 查询一个accuracy的表格, 需要的索引是model_name, target_dataset_name, train_type, test_type, epsilon_train 5维索引 感觉有点多
+        return self.result_accuracy[target_dataset_name]["sub_train_{}".format(train_type)]["sub_test_{}".format(test_type)][model_name]["epsilon_consume_{}".format(epsilon_train)]
 
     def update_max_time(self, max_time):
         self.queue.put(SchedEvent(max_time, EVENT_KEY.MAX_TIME, {}))
@@ -281,25 +322,37 @@ class Scheduler(object):
 
     def do_submit_job(self, job_id):
         self.current_job_arrival_index += 1
-        self.history_job_priority_weights.append(self.jobid_2_priority_weight[job_id])
-        self.history_job_budget_consumes.append(self.jobid_2_target_epsilon[job_id])
+        self.sche_timely_update_history_job(self.jobid_2_priority_weight[job_id], self.jobid_2_target_epsilon[job_id],
+                                            self.jobid_2_target_dataset_name[job_id], self.jobid_2_test_type[job_id],
+                                            self.jobid_2_significance[job_id])
 
-    def worker_finished_job_callback(self, job_id):
+    def worker_finished_job_callback(self, job_id, policy):
         # self.sched_info("Scheduler: Job {job_id} Finished".format(job_id=job_id))
-        dataset_name = self.jobid_2_datasettargetconfig[job_id]["dataset_name"]
+        dataset_name = self.jobid_2_target_dataset_name[job_id]
+        test_type = self.jobid_2_test_type[job_id]
+        model_name = self.jobid_2_origininfo[job_id]["model_name"]
+        epsilon_consume = self.jobid_2_target_epsilon[job_id]
         selected_datablock_identifiers = self.jobid_2_datasettargetconfig[job_id]["selected_datablock_identifiers"]
-        significance_results = []
+        self.jobid_2_results[job_id] = {}
+        sign_result = 0.0
+        if policy.significance_enable:
+            significance_results = []
+            for datablock_identifier in selected_datablock_identifiers:
+                significance_results.append(self.jobid_2_significance[job_id][datablock_identifier]) # TODO(xlc): 这里需要做修改，确保最后的结果能够传回来
+            sign_result = np.mean(significance_results)
+        self.jobid_2_results[job_id]["significance"] = sign_result
+        accuracy_results = []
         for datablock_identifier in selected_datablock_identifiers:
-            significance_results.append(self.sub_train_datasetidentifier_2_dataset_metadata[dataset_name][datablock_identifier]["significance"])
-        sign_result = np.mean(significance_results)
+            train_type = self.sub_train_datasetidentifier_2_train_type[dataset_name][datablock_identifier]
+            accuracy_results.append(self.get_job_profiler_accuracy(dataset_name, train_type, test_type, model_name, epsilon_consume))
+        acc_result = np.mean(accuracy_results)
+        self.jobid_2_results[job_id]["accuracy"] = acc_result
+
         self.sche_reflash_job_status(job_id, JOB_STATUS_KEY.RUNNING, JOB_STATUS_KEY.FINISHED)
         self.jobid_2_finished_time[job_id] = self.global_time
-        self.jobid_2_results[job_id] = {
-            "significance": sign_result
-        }
         self.jobid_2_real_epsilon[job_id] = self.jobid_2_target_epsilon[job_id]
         remain_epsilon = self.jobid_2_target_epsilon[job_id] - self.jobid_2_real_epsilon[job_id]
-        dataset_name = self.jobid_2_datasettargetconfig[job_id]["dataset_name"]
+        dataset_name = self.jobid_2_target_dataset_name[job_id]
         datablock_identifiers = self.jobid_2_datasettargetconfig[job_id]["selected_datablock_identifiers"]
         # worker_identifier = self.jobid_2_gputarget[job_id]
         # worker_consume_num = self.jobid_2_target_gpu_number[job_id]
@@ -327,23 +380,12 @@ class Scheduler(object):
             self.sched_info("status_2_jobid[{}]: {}".format(status, self.status_2_jobid[status]))
         # self.sched_info("self.jobid_2_results")
         all_significance = 0.0
+        all_accuracy = 0.0
         for job_id in self.jobid_2_results:
             if self.jobid_2_results[job_id] is not None:
                 # self.sched_info("jobid_2_results[{}]: {}".format(job_id, self.jobid_2_results[job_id]))
                 all_significance += self.jobid_2_results[job_id]["significance"]
-        # self.sched_info("self.jobid_2_gputarget: {}".format(self.jobid_2_gputarget))
-        # self.sched_info("self.sub_train_datasetidentifier_2_dataset_status")
-        # for datasetname in self.sub_train_datasetidentifier_2_dataset_status:
-        #     for datasetidentifier in self.sub_train_datasetidentifier_2_dataset_status[datasetname]:
-        #         self.sched_info("sub_train_datasetidentifier_2_dataset_status[{}][{}]: {}".format(datasetname, datasetidentifier, self.sub_train_datasetidentifier_2_dataset_status[datasetname][datasetidentifier]))
-        # self.sched_info("self.sub_train_datasetidentifier_2_dataset_metadata")
-        # for datasetname in self.sub_train_datasetidentifier_2_dataset_metadata:
-        #     for datasetidentifier in self.sub_train_datasetidentifier_2_dataset_metadata[datasetname]:
-        #         self.sched_info("sub_train_datasetidentifier_2_dataset_metadata[{}][{}]: {}".format(datasetname, datasetidentifier, self.sub_train_datasetidentifier_2_dataset_metadata[datasetname][datasetidentifier]))
-        # self.sched_info("self.sub_train_datasetidentifier_2_epsilon_capacity")
-        # for datasetname in self.sub_train_datasetidentifier_2_epsilon_capacity:
-        #     for datasetidentifier in self.sub_train_datasetidentifier_2_epsilon_capacity[datasetname]:
-        #         self.sched_info("sub_train_datasetidentifier_2_epsilon_capacity[{}][{}]: {}".format(datasetname, datasetidentifier, self.sub_train_datasetidentifier_2_epsilon_capacity[datasetname][datasetidentifier]))
+                all_accuracy += self.jobid_2_results[job_id]["accuracy"]
         self.sched_info("self.sub_train_datasetidentifier_2_epsilon_remain")
         for datasetname in self.sub_train_datasetidentifier_2_epsilon_remain:
             for datasetidentifier in self.sub_train_datasetidentifier_2_epsilon_remain[datasetname]:
@@ -352,6 +394,7 @@ class Scheduler(object):
         self.sched_info("Finished Job num: {}".format(len(self.status_2_jobid[JOB_STATUS_KEY.FINISHED])))
         self.sched_info("Failed Job num: {}".format(len(self.status_2_jobid[JOB_STATUS_KEY.FAILED])))
         self.sched_info("all_significance: {}".format(all_significance))
+        self.sched_info("all_accuracy: {}".format(all_accuracy))
         self.sched_info("==================================")
 
     def get_target_job_status_update_path_and_status(self, job_id, operator):
@@ -402,18 +445,15 @@ class Scheduler(object):
             target_status = JOB_STATUS_KEY.DONE_ALL_SCHED
         return origin_status, target_status
     
-    def get_runtime_state(self, policy, job_id_2_dataset_name, job_id_2_target_epsilon_require, job_id_2_target_datablock_select_num, job_id_2_job_priority_weight):
+    def get_runtime_state(self, policy, job_id_2_dataset_name, job_id_2_target_epsilon_require, job_id_2_target_datablock_select_num, job_id_2_job_priority_weight, job_id_2_test_type, job_id_2_significance):
         state = {}
         state["job_id_2_target_dataset_name"] = job_id_2_dataset_name
         state["job_id_2_target_epsilon_require"] = job_id_2_target_epsilon_require
         state["job_id_2_target_datablock_select_num"] = job_id_2_target_datablock_select_num
         state["job_id_2_job_priority_weight"] = job_id_2_job_priority_weight
-        sub_train_datasetidentifier_2_significance = {}
-        for target_select_dataset_name in self.sub_train_datasetidentifier_2_dataset_status:
-            sub_train_datasetidentifier_2_significance[target_select_dataset_name] = {}
-            for datablock_identifier in self.sub_train_datasetidentifier_2_dataset_status[target_select_dataset_name]:
-                sub_train_datasetidentifier_2_significance[target_select_dataset_name][datablock_identifier] = self.sub_train_datasetidentifier_2_dataset_metadata[target_select_dataset_name][datablock_identifier]["significance"] 
-        state["current_sub_train_datasetidentifier_2_significance"] = sub_train_datasetidentifier_2_significance
+        state["job_id_2_test_type"] = job_id_2_test_type
+        state["job_id_2_significance"] = job_id_2_significance
+
         state["current_sub_train_datasetidentifier_2_epsilon_remain"] = copy.deepcopy(self.sub_train_datasetidentifier_2_epsilon_remain)
         state["current_sub_train_datasetidentifier_2_epsilon_capcity"] = copy.deepcopy(self.sub_train_datasetidentifier_2_epsilon_capacity)
 
@@ -422,28 +462,42 @@ class Scheduler(object):
             state["all_job_sequence_num"] = self.job_sequence_all_num
             state["history_job_priority_weights"] = self.history_job_priority_weights
             state["history_job_budget_consumes"] = self.history_job_budget_consumes
+            state["history_job_target_dataset_name"] = self.history_job_target_dataset_name
+            state["history_job_significance"] = self.history_job_significance
  
         return state
 
-    def get_scheduling_datablock_result(self, policy, job_id_2_dataset_name, job_id_2_target_epsilon_require, job_id_2_target_datablock_select_num, job_id_2_job_priority_weight):        
+    def get_significance_state(self, policy, target_dataset_name, train_type, test_type, target_epsilon_consume):
+        signficance_state = {}
+        signficance_state["target_dataset_name"] = target_dataset_name
+        signficance_state["train_type"] = train_type
+        signficance_state["test_type"] = test_type
+        if policy.name == "PBGPolicy":
+            signficance_state["epsilon_consume"] = target_epsilon_consume
+        return signficance_state
+
+    def get_scheduling_datablock_result(self, policy, job_id_2_dataset_name, job_id_2_target_epsilon_require, job_id_2_target_datablock_select_num, job_id_2_job_priority_weight, job_id_2_test_type, job_id_2_significance):        
         job_2_selected_datablock_identifiers = []
         # 在这里接入算法?
-        state = self.get_runtime_state(policy, job_id_2_dataset_name, job_id_2_target_epsilon_require, job_id_2_target_datablock_select_num, job_id_2_job_priority_weight)
+        state = self.get_runtime_state(policy, job_id_2_dataset_name, job_id_2_target_epsilon_require, job_id_2_target_datablock_select_num, job_id_2_job_priority_weight, job_id_2_test_type, job_id_2_significance)
         job_2_selected_datablock_identifiers, calcu_compare_epsilon = policy.get_allocation(state)
         # not_selected_datablock_identifiers = [tu[0] for tu in sub_train_sort[target_datablock_select_num:]]
         return job_2_selected_datablock_identifiers, calcu_compare_epsilon
 
-    def sched_for_no_sched_jobs(self, policy): 
+    def sched_for_no_sched_jobs(self, policy):
+        
         if self.current_job_arrival_index + 1 < self.job_sequence_all_num and len(self.status_2_jobid[JOB_STATUS_KEY.NO_SCHE]) < policy.waiting_queue_capacity:
             self.logger.debug("No for schedule time casue: [len(self.status_2_jobid[JOB_STATUS_KEY.NO_SCHE]): {}]".format(len(self.status_2_jobid[JOB_STATUS_KEY.NO_SCHE])))
             return
-        job_id_2_dataset_name = {job_id: self.jobid_2_datasettargetconfig[job_id]["dataset_name"] for job_id in self.status_2_jobid[JOB_STATUS_KEY.NO_SCHE]}
+        job_id_2_dataset_name = {job_id: self.jobid_2_target_dataset_name[job_id] for job_id in self.status_2_jobid[JOB_STATUS_KEY.NO_SCHE]}
         job_id_2_target_epsilon_require = {job_id: self.jobid_2_target_epsilon[job_id] for job_id in self.status_2_jobid[JOB_STATUS_KEY.NO_SCHE]}
         job_id_2_target_datablock_select_num = {job_id: self.jobid_2_origininfo[job_id]["datablock_select_num"] for job_id in self.status_2_jobid[JOB_STATUS_KEY.NO_SCHE]}
         job_id_2_job_priority_weight = {job_id: self.jobid_2_priority_weight[job_id] for job_id in self.status_2_jobid[JOB_STATUS_KEY.NO_SCHE]}
-            
+        job_id_2_test_type = {job_id: self.jobid_2_test_type[job_id] for job_id in self.status_2_jobid[JOB_STATUS_KEY.NO_SCHE]}
+        job_id_2_significance = {job_id: self.jobid_2_significance[job_id] for job_id in self.status_2_jobid[JOB_STATUS_KEY.NO_SCHE]}
+
         job_2_selected_datablock_identifiers, calcu_compare_epsilon = \
-            self.get_scheduling_datablock_result(policy, job_id_2_dataset_name, job_id_2_target_epsilon_require, job_id_2_target_datablock_select_num, job_id_2_job_priority_weight)
+            self.get_scheduling_datablock_result(policy, job_id_2_dataset_name, job_id_2_target_epsilon_require, job_id_2_target_datablock_select_num, job_id_2_job_priority_weight, job_id_2_test_type, job_id_2_significance)
         success_sched_job_ids = set()
         if len(job_2_selected_datablock_identifiers) > 0:
             self.sched_info("Jobs selected datablock identifiers: {}".format(job_2_selected_datablock_identifiers))
@@ -498,7 +552,7 @@ class Scheduler(object):
             # 处理已经完成的任务
             if next_event.event_key == EVENT_KEY.JOB_REMOVE:
                 job_id = next_event.metadata["job_id"]
-                self.worker_finished_job_callback(job_id)
+                self.worker_finished_job_callback(job_id, policy)
             elif next_event.event_key == EVENT_KEY.JOB_SUBMIT:
                 job_id = next_event.metadata["job_id"]
                 self.do_submit_job(job_id)
@@ -522,14 +576,14 @@ class Scheduler(object):
 
         # 计算一些时间和结果
 
-def do_one_game(logger, oracle_throughput_path,
+def do_one_game(logger, oracle_throughput_path, accuracy_result_path,
                 subtrain_datasets_map, test_datasets_map,
                 jobs_map, history_jobs_map, reference_max_time,
                 policy_item):
-    sched = Scheduler(logger, oracle_throughput_path)
+    sched = Scheduler(logger, oracle_throughput_path, accuracy_result_path)
     sched.update_dataset(subtrain_datasets_map, test_datasets_map)
-    sched.update_jobs(jobs_map)
-    sched.update_history_jobs(history_jobs_map)
+    sched.update_jobs(jobs_map, policy_item)
+    sched.update_history_jobs(history_jobs_map, policy_item)
     sched.update_max_time(reference_max_time)
     sched.simulate_start(policy_item)
     sched.clear_all_jobs()
@@ -548,8 +602,11 @@ if __name__ == '__main__':
         'p100': None,
         'k80': None
     }
-    init_dataset_name_2_block_num = {
-        "Home_and_Kitchen": args.datablock_num
+    init_dataset_name_2_train_type_num = {
+        "EMNIST": args.train_type_num
+    }
+    init_dataset_name_2_test_type_num = {
+        "EMNIST": args.test_type_num
     }
 
     prefix_path = GLOBAL_PATH
@@ -559,14 +616,15 @@ if __name__ == '__main__':
     result_log_dir_path = '%s/log_schedule_%s' % (prefix_path, date)
     logger_path_prefix = '%s/%s' % (result_log_dir_path, file_log_name)
     oracle_throughput_path = '%s/traces/physical_cluster_throughputs_without_unconsolidated.json' % (prefix_path)
+    accuracy_result_path = '%s/traces/accuracy_result.json' % (prefix_path)
 
     job_num = args.job_num
     history_num = args.history_job_num
     lam = 3600.0
     fixed_datablock_select_num = args.fixed_datablock_select_num
-    jobs_map, history_jobs_map, reference_max_time = generate_all_jobs(job_num, history_num, oracle_throughput_path, lam, 
+    jobs_map, history_jobs_map, reference_max_time = generate_all_jobs(job_num, history_num, init_dataset_name_2_test_type_num, oracle_throughput_path, lam, 
                                                     fixed_datablock_select_num=fixed_datablock_select_num)
-    subtrain_datasets_map, test_datasets_map = generate_all_subtrain_datablocks(init_dataset_name_2_block_num)
+    subtrain_datasets_map, test_datasets_map = generate_all_subtrain_datablocks(init_dataset_name_2_train_type_num)
     
     logger_path = '%s.log' % (logger_path_prefix)
     logger = get_logger(logger_path, enable_multiprocess=False)
@@ -582,10 +640,10 @@ if __name__ == '__main__':
             args_product_list = [d for d in itertools.product(comparison_cost_epsilon_list, comparison_z_threshold_list, L_list, U_list)]
         elif policy == "HISPolicy":
             beta_list = args.his_betas
-            gamma_list = args.his_gammas
-            delta_list = args.his_deltas
-            only_small_flag_list = args.his_only_small_flags
-            args_product_list = [d for d in itertools.product(beta_list, gamma_list, delta_list, only_small_flag_list)]
+            # gamma_list = args.his_gammas
+            # delta_list = args.his_deltas
+            # only_small_flag_list = args.his_only_small_flags
+            args_product_list = beta_list
         elif policy == "DPFHISPolicy":
             print(policy)
             beta_list = args.dpf_his_betas
@@ -596,23 +654,21 @@ if __name__ == '__main__':
             for temp_arg in args_product_list:
                 comparison_cost_epsilon, comparison_z_threshold, L, U = temp_arg
                 policy_item = PBGPolicy(comparison_cost_epsilon, comparison_z_threshold, L, U, logger)
-                do_one_game(logger, oracle_throughput_path,
+                do_one_game(logger, oracle_throughput_path, accuracy_result_path,
                             subtrain_datasets_map, test_datasets_map,
                             jobs_map, history_jobs_map, reference_max_time,
                             policy_item)
         elif policy == "HISPolicy":
             for temp_arg in args_product_list:
-                beta, gamma, delta, only_small_flag = temp_arg
-                if beta >= gamma:
-                    continue
-                policy_item = HISPolicy(beta, gamma, delta, only_small_flag, logger)
-                do_one_game(logger, oracle_throughput_path,
+                beta = temp_arg
+                policy_item = HISPolicy(beta, logger)
+                do_one_game(logger, oracle_throughput_path, accuracy_result_path,
                             subtrain_datasets_map, test_datasets_map,
                             jobs_map, history_jobs_map, reference_max_time,
                             policy_item)
         elif policy == "SagePolicy":
             policy_item = SagePolicy(logger)
-            do_one_game(logger, oracle_throughput_path,
+            do_one_game(logger, oracle_throughput_path, accuracy_result_path,
                         subtrain_datasets_map, test_datasets_map,
                         jobs_map, history_jobs_map, reference_max_time,
                         policy_item)
@@ -621,7 +677,7 @@ if __name__ == '__main__':
             for temp_arg in args_product_list:
                 beta, waiting_queue_capacity = temp_arg
                 policy_item = DPFHISPolicy(beta, waiting_queue_capacity, logger)
-                do_one_game(logger, oracle_throughput_path,
+                do_one_game(logger, oracle_throughput_path, accuracy_result_path,
                             subtrain_datasets_map, test_datasets_map,
                             jobs_map, history_jobs_map, reference_max_time,
                             policy_item)

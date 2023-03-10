@@ -8,6 +8,7 @@ class SagePolicy(Policy):
         self._name = 'SagePolicy'
         self.logger = logger
         self.waiting_queue_capacity = 1
+        self.significance_enable = False
 
     def report_state(self):
         self.logger.info("policy name: {}".format(self._name))
@@ -22,12 +23,12 @@ class SagePolicy(Policy):
         job_id = list(set_job_id)[0]
         target_dataset_name = list(set_dataset_name)[0]
         
-        sub_train_datasetidentifier_2_significance = state["current_sub_train_datasetidentifier_2_significance"][target_dataset_name]
         sub_train_datasetidentifier_2_epsilon_remain = state["current_sub_train_datasetidentifier_2_epsilon_remain"][target_dataset_name]
         sub_train_datasetidentifier_2_epsilon_capcity = state["current_sub_train_datasetidentifier_2_epsilon_capcity"][target_dataset_name]
         target_epsilon_require = state["job_id_2_target_epsilon_require"][job_id]
         target_datablock_select_num = state["job_id_2_target_datablock_select_num"][job_id]
         job_priority_weight = state["job_id_2_job_priority_weight"][job_id]
+        sub_train_datasetidentifier_2_significance = state["job_id_2_significance"][job_id]
         
         temp_datasetidentifier_2_epsilon_z = {
             datasetidentifier: sub_train_datasetidentifier_2_epsilon_remain[datasetidentifier]/sub_train_datasetidentifier_2_epsilon_capcity[datasetidentifier]

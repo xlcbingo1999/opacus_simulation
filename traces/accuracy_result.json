@@ -1,0 +1,204 @@
+{
+    "EMNIST": {
+        "sub_train_0": {
+            "sub_test_0": {
+                "CNN": {
+                    "epsilon_consume_5.0": 0.642222106,
+                    "epsilon_consume_1.0": 0.559392512
+                }
+            },
+            "sub_test_1": {
+                "CNN": {
+                    "epsilon_consume_5.0": 0.596250892,
+                    "epsilon_consume_1.0": 0.508596957
+                }
+            },
+            "sub_test_2": {
+                "CNN": {
+                    "epsilon_consume_5.0": 0.792394817,
+                    "epsilon_consume_1.0": 0.702752709
+                }
+            }
+        },
+        "sub_train_1": {
+            "sub_test_0": {
+                "CNN": {
+                    "epsilon_consume_5.0": 0.648661733,
+                    "epsilon_consume_1.0": 0.556985795
+                }
+            },
+            "sub_test_1": {
+                "CNN": {
+                    "epsilon_consume_5.0": 0.60965991,
+                    "epsilon_consume_1.0": 0.50644356
+                }
+            },
+            "sub_test_2": {
+                "CNN": {
+                    "epsilon_consume_5.0": 0.759118736,
+                    "epsilon_consume_1.0": 0.643989742
+                }
+            }
+        },
+        "sub_train_2": {
+            "sub_test_0": {
+                "CNN": {
+                    "epsilon_consume_5.0": 0.636844158,
+                    "epsilon_consume_1.0": 0.527880907
+                }
+            },
+            "sub_test_1": {
+                "CNN": {
+                    "epsilon_consume_5.0": 0.504989386,
+                    "epsilon_consume_1.0": 0.408066839
+                }
+            },
+            "sub_test_2": {
+                "CNN": {
+                    "epsilon_consume_5.0": 0.650562108,
+                    "epsilon_consume_1.0": 0.506023526
+                }
+            }
+        },
+        "sub_train_3": {
+            "sub_test_0": {
+                "CNN": {
+                    "epsilon_consume_5.0": 0.678201616,
+                    "epsilon_consume_1.0": 0.597628236
+                }
+            },
+            "sub_test_1": {
+                "CNN": {
+                    "epsilon_consume_5.0": 0.603115261,
+                    "epsilon_consume_1.0": 0.512752712
+                }
+            },
+            "sub_test_2": {
+                "CNN": {
+                    "epsilon_consume_5.0": 0.783456504,
+                    "epsilon_consume_1.0": 0.687918901
+                }
+            }
+        },
+        "sub_train_4": {
+            "sub_test_0": {
+                "CNN": {
+                    "epsilon_consume_5.0": 0.540670037,
+                    "epsilon_consume_1.0": 0.423083007
+                }
+            },
+            "sub_test_1": {
+                "CNN": {
+                    "epsilon_consume_5.0": 0.579032183,
+                    "epsilon_consume_1.0": 0.478781462
+                }
+            },
+            "sub_test_2": {
+                "CNN": {
+                    "epsilon_consume_5.0": 0.666131973,
+                    "epsilon_consume_1.0": 0.517834663
+                }
+            }
+        },
+        "sub_train_5": {
+            "sub_test_0": {
+                "CNN": {
+                    "epsilon_consume_5.0": 0.422913283,
+                    "epsilon_consume_1.0": 0.36437726
+                }
+            },
+            "sub_test_1": {
+                "CNN": {
+                    "epsilon_consume_5.0": 0.379158437,
+                    "epsilon_consume_1.0": 0.328371078
+                }
+            },
+            "sub_test_2": {
+                "CNN": {
+                    "epsilon_consume_5.0": 0.4356547,
+                    "epsilon_consume_1.0": 0.409144849
+                }
+            }
+        },
+        "sub_train_6": {
+            "sub_test_0": {
+                "CNN": {
+                    "epsilon_consume_5.0": 0.425517291,
+                    "epsilon_consume_1.0": 0.373941302
+                }
+            },
+            "sub_test_1": {
+                "CNN": {
+                    "epsilon_consume_5.0": 0.300134242,
+                    "epsilon_consume_1.0": 0.259206355
+                }
+            },
+            "sub_test_2": {
+                "CNN": {
+                    "epsilon_consume_5.0": 0.496455789,
+                    "epsilon_consume_1.0": 0.417701989
+                }
+            }
+        },
+        "sub_train_7": {
+            "sub_test_0": {
+                "CNN": {
+                    "epsilon_consume_5.0": 0.443352014,
+                    "epsilon_consume_1.0": 0.392590404
+                }
+            },
+            "sub_test_1": {
+                "CNN": {
+                    "epsilon_consume_5.0": 0.409564078,
+                    "epsilon_consume_1.0": 0.341718465
+                }
+            },
+            "sub_test_2": {
+                "CNN": {
+                    "epsilon_consume_5.0": 0.384862095,
+                    "epsilon_consume_1.0": 0.280789793
+                }
+            }
+        },
+        "sub_train_8": {
+            "sub_test_0": {
+                "CNN": {
+                    "epsilon_consume_5.0": 0.403198808,
+                    "epsilon_consume_1.0": 0.276449382
+                }
+            },
+            "sub_test_1": {
+                "CNN": {
+                    "epsilon_consume_5.0": 0.35518682,
+                    "epsilon_consume_1.0": 0.254882634
+                }
+            },
+            "sub_test_2": {
+                "CNN": {
+                    "epsilon_consume_5.0": 0.440906078,
+                    "epsilon_consume_1.0": 0.380156428
+                }
+            }
+        },
+        "sub_train_9": {
+            "sub_test_0": {
+                "CNN": {
+                    "epsilon_consume_5.0": 0.42196995,
+                    "epsilon_consume_1.0": 0.347175717
+                }
+            },
+            "sub_test_1": {
+                "CNN": {
+                    "epsilon_consume_5.0": 0.458325654,
+                    "epsilon_consume_1.0": 0.336531729
+                }
+            },
+            "sub_test_2": {
+                "CNN": {
+                    "epsilon_consume_5.0": 0.475160748,
+                    "epsilon_consume_1.0": 0.283861488
+                }
+            }
+        }
+    }
+}

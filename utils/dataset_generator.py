@@ -16,30 +16,30 @@ def _generate_epsilon_capacity(rng):
 def _generate_delta_capacity(rng):
     return 4e-6
 
-def _generate_significance(rng):
-    significance = 0.1
-    r = rng.uniform(0, 1)
-    if r >= 0.8:
-        significance = 1.0
-    elif 0.4 <= r < 0.8:
-        significance = 0.5
-    else:
-        significance = 0.1
-    return significance
+# def _generate_significance(rng):
+#     significance = 0.1
+#     r = rng.uniform(0, 1)
+#     if r >= 0.8:
+#         significance = 1.0
+#     elif 0.4 <= r < 0.8:
+#         significance = 0.5
+#     else:
+#         significance = 0.1
+#     return significance
 
 def generate_subtrain_datablocks(dataset_name, block_num,
                                 epsilon_capacity_generator=_generate_epsilon_capacity,
-                                delta_capacity_generator=_generate_delta_capacity,
-                                significance_generator=_generate_significance):
+                                delta_capacity_generator=_generate_delta_capacity):
     rng = random.Random()
     
     all_blocks = {}
     for index in range(block_num):
         block_name = "train_sub_{}".format(index)
         all_blocks[block_name] = {
+            "train_type": index,
+            "dataset_name": dataset_name,
             "epsilon_capacity": epsilon_capacity_generator(rng),
             "delta_capacity": delta_capacity_generator(rng),
-            "significance": significance_generator(rng)
         }
     sub_train_result = all_blocks
     test_result = {}

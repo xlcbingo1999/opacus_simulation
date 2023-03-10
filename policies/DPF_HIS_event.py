@@ -5,15 +5,18 @@ import numpy as np
 import math
 import cvxpy as cp
 import heapq
+import json
 
 class WaitingJob(object):
-    def __init__(self, job_id, target_dataset_name, target_datablock_select_num, target_epsilon_require, job_priority_weight):
+    def __init__(self, job_id, target_dataset_name, target_datablock_select_num, target_epsilon_require, job_priority_weight, sub_train_datasetidentifier_2_significance):
         self.job_id = job_id
         self.target_dataset_name = target_dataset_name
         self.target_datablock_select_num = target_datablock_select_num
         self.target_epsilon_require = target_epsilon_require
         self.job_priority_weight = job_priority_weight
+        self.sub_train_datasetidentifier_2_significance = sub_train_datasetidentifier_2_significance
         self.dominant_share = 0.0
+        
 
 class DPFHISPolicy(Policy):
     def __init__(self, beta, waiting_queue_capacity, logger):
@@ -26,27 +29,36 @@ class DPFHISPolicy(Policy):
 
         self.beta = beta
         self.logger = logger
+
+        self.significance_enable = True
+        self.significance_trace_path = "/home/netlab/DL_lab/opacus_simulation/traces/significance_HIS.json"
+        with open(self.significance_trace_path, "r+") as f:
+            self.significance_trace = json.load(f)
     
     def report_state(self):
         self.logger.info("policy name: {}".format(self._name))
         self.logger.info("policy args: beta: {}".format(self.beta))
         self.logger.info("policy args: waiting_queue_capacity: {}".format(self.waiting_queue_capacity))
+        self.logger.info("policy args: significance_trace_path: {}".format(self.significance_trace_path))
 
     def get_allocation(self, state):
         job_id_2_target_epsilon_require = state["job_id_2_target_epsilon_require"]
         job_id_2_target_datablock_select_num = state["job_id_2_target_datablock_select_num"]
         job_id_2_job_priority_weight = state["job_id_2_job_priority_weight"]
         job_id_2_target_dataset_name = state["job_id_2_target_dataset_name"]
+        job_id_2_significance = state["job_id_2_significance"]
         all_job_sequence_num = state["all_job_sequence_num"]
         history_job_priority_weights = state["history_job_priority_weights"]
         history_job_budget_consumes = state["history_job_budget_consumes"]
+        history_job_signficance = state["history_job_significance"]
+        
 
         assert len(job_id_2_target_dataset_name) >= self.waiting_queue_capacity
         set_dataset_name = set(job_id_2_target_dataset_name.values())
         assert len(set_dataset_name) == 1 # 必须保证所有的任务都是针对同一个数据集的
         target_dataset_name = list(set_dataset_name)[0]
 
-        sub_train_datasetidentifier_2_significance = state["current_sub_train_datasetidentifier_2_significance"][target_dataset_name]
+        # sub_train_datasetidentifier_2_significance = state["current_sub_train_datasetidentifier_2_significance"][target_dataset_name]
         sub_train_datasetidentifier_2_epsilon_remain = state["current_sub_train_datasetidentifier_2_epsilon_remain"][target_dataset_name]
         sub_train_datasetidentifier_2_epsilon_capcity = state["current_sub_train_datasetidentifier_2_epsilon_capcity"][target_dataset_name]
     
@@ -55,7 +67,8 @@ class DPFHISPolicy(Policy):
             target_datablock_select_num = job_id_2_target_datablock_select_num[job_id]
             target_epsilon_require = job_id_2_target_epsilon_require[job_id]
             job_priority_weight = job_id_2_job_priority_weight[job_id]
-            waiting_job = WaitingJob(job_id, target_dataset_name, target_datablock_select_num, target_epsilon_require, job_priority_weight)
+            sub_train_datasetidentifier_2_significance = job_id_2_significance[job_id]
+            waiting_job = WaitingJob(job_id, target_dataset_name, target_datablock_select_num, target_epsilon_require, job_priority_weight, sub_train_datasetidentifier_2_significance)
             self.waiting_queue.append(waiting_job)
         job_2_selected_datablock_identifiers = {} 
         calcu_compare_epsilon = 0.0
@@ -64,7 +77,7 @@ class DPFHISPolicy(Policy):
             all_job_sequence_num,
             history_job_priority_weights, 
             history_job_budget_consumes,
-            sub_train_datasetidentifier_2_significance,
+            history_job_signficance,
             sub_train_datasetidentifier_2_epsilon_remain,
             sub_train_datasetidentifier_2_epsilon_capcity
         )
@@ -75,7 +88,7 @@ class DPFHISPolicy(Policy):
                         all_job_sequence_num,
                         history_job_priority_weights, 
                         history_job_budget_consumes,
-                        sub_train_datasetidentifier_2_significance,
+                        history_job_signficance,
                         sub_train_datasetidentifier_2_epsilon_remain,
                         sub_train_datasetidentifier_2_epsilon_capcity):
         for job in self.waiting_queue:
@@ -88,7 +101,7 @@ class DPFHISPolicy(Policy):
             calcu_compare_epsilon = self.on_assignment_for_waiting_jobs(all_job_sequence_num,
                                                                         history_job_priority_weights, 
                                                                         history_job_budget_consumes,
-                                                                        sub_train_datasetidentifier_2_significance,
+                                                                        history_job_signficance,
                                                                         sub_train_datasetidentifier_2_epsilon_remain,
                                                                         sub_train_datasetidentifier_2_epsilon_capcity)
         return job_2_selected_datablock_identifiers, calcu_compare_epsilon
@@ -97,35 +110,36 @@ class DPFHISPolicy(Policy):
                                     all_job_sequence_num,
                                     history_job_priority_weights, 
                                     history_job_budget_consumes,
-                                    sub_train_datasetidentifier_2_significance,
+                                    history_job_signficance,
                                     sub_train_datasetidentifier_2_epsilon_remain,
                                     sub_train_datasetidentifier_2_epsilon_capcity):
         if len(history_job_priority_weights) + len(self.waiting_queue) < all_job_sequence_num:
             sample_history_job_priority_weights = history_job_priority_weights
             sample_history_job_budget_consumes = history_job_budget_consumes
+            sample_history_job_signficances = history_job_signficance
         else:
-            sample_history_job_priority_weights = random.sample(history_job_priority_weights, all_job_sequence_num-len(self.waiting_queue))
-            sample_history_job_budget_consumes = random.sample(history_job_budget_consumes, all_job_sequence_num-len(self.waiting_queue))
-
+            sample_indexes = random.sample(range(len(history_job_priority_weights)), all_job_sequence_num-len(self.waiting_queue))
+            sample_history_job_priority_weights = [history_job_priority_weights[i] for i in sample_indexes]
+            sample_history_job_budget_consumes = [history_job_budget_consumes[i] for i in sample_indexes]
+            sample_history_job_signficances = [history_job_signficance[i] for i in sample_indexes]
         job_2_selected_datablock_identifiers, \
             calcu_compare_epsilon = self.get_allocation_for_small(sample_history_job_priority_weights, 
-                                                                sample_history_job_budget_consumes, 
-                                                                sub_train_datasetidentifier_2_significance,
+                                                                sample_history_job_budget_consumes,
+                                                                sample_history_job_signficances,
                                                                 sub_train_datasetidentifier_2_epsilon_remain, 
                                                                 sub_train_datasetidentifier_2_epsilon_capcity)
         return job_2_selected_datablock_identifiers, calcu_compare_epsilon
 
 
-    def get_sign_matrix(self, current_all_job_significances, 
-                        sub_train_datasetidentifier_2_significance,
+    def get_sign_matrix(self, current_all_job_priority_weights, current_all_job_significances,
                         sub_train_datasetidentifier_2_epsilon_capcity):
         temp_index_2_datablock_identifier = {}
         sign_matrix = []
-        for job_index, job_priority_weight in enumerate(current_all_job_significances):
+        for job_index, job_priority_weight in enumerate(current_all_job_priority_weights):
             temp = []
             for datablock_index, datablock_identifier in enumerate(sub_train_datasetidentifier_2_epsilon_capcity):
                 temp_index_2_datablock_identifier[datablock_index] = datablock_identifier
-                temp.append(sub_train_datasetidentifier_2_significance[datablock_identifier] * job_priority_weight)
+                temp.append(current_all_job_significances[job_index][datablock_identifier] * job_priority_weight)
             sign_matrix.append(temp)
         sign_matrix = np.array(sign_matrix)
         return sign_matrix, temp_index_2_datablock_identifier
@@ -169,18 +183,21 @@ class DPFHISPolicy(Policy):
             schedule_order.append((x, y))
         return schedule_order
 
-    def get_allocation_for_small(self, history_job_priority_weights, history_job_budget_consumes, sub_train_datasetidentifier_2_significance,
+    def get_allocation_for_small(self, history_job_priority_weights, history_job_budget_consumes, history_job_signficances,
                                 sub_train_datasetidentifier_2_epsilon_remain, sub_train_datasetidentifier_2_epsilon_capcity):
         # assert target_datablock_select_num == 1
         calcu_compare_epsilon = 0.0
         
-        current_all_job_significances = copy.deepcopy(history_job_priority_weights)
+        current_all_job_priority_weights = copy.deepcopy(history_job_priority_weights)
         current_all_job_budget_consumes = copy.deepcopy(history_job_budget_consumes)
+        current_all_job_significances = copy.deepcopy(history_job_signficances)
         for job in self.waiting_queue:
-            current_all_job_significances.append(job.job_priority_weight)
+            current_all_job_priority_weights.append(job.job_priority_weight)
             current_all_job_budget_consumes.append(job.target_epsilon_require)
+            current_all_job_significances.append(job.sub_train_datasetidentifier_2_significance)
         sign_matrix, temp_index_2_datablock_identifier = self.get_sign_matrix(
-            current_all_job_significances, sub_train_datasetidentifier_2_significance,
+            current_all_job_priority_weights,
+            current_all_job_significances,
             sub_train_datasetidentifier_2_epsilon_capcity
         )
         
@@ -253,3 +270,8 @@ class DPFHISPolicy(Policy):
         assert result_dataset_identifier != ""
         return result_dataset_identifier
         
+    def get_job_datablock_signficance(self, signficance_state):
+        target_dataset_name = signficance_state["target_dataset_name"]
+        train_type = signficance_state["train_type"]
+        test_type = signficance_state["test_type"]
+        return self.significance_trace[target_dataset_name]["sub_train_{}".format(train_type)]["sub_test_{}".format(test_type)]

@@ -1,7 +1,8 @@
 class JobTemplate:
-    def __init__(self, model, command, working_directory, 
+    def __init__(self, model_name, model, command, working_directory, 
                 num_steps_arg, mem_request, target_dataset,
                  needs_data_dir=True, distributed=False):
+        self._model_name = model_name
         self._model = model
         self._command = command
         self._working_directory = working_directory
@@ -10,6 +11,10 @@ class JobTemplate:
         self._target_dataset = target_dataset
         self._needs_data_dir = needs_data_dir
         self._distributed = distributed
+
+    @property
+    def model_name(self):
+        return self._model_name
 
     @property
     def model(self):

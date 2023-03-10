@@ -26,14 +26,18 @@ def _generate_memory(rng):
 
 def _generate_privacy_budget(rng):
     privacy_epsilon = 1.0
-    privacy_delta = 5e-9
+    privacy_delta = 1e-7
     r = rng.uniform(0, 1)
-    if r >= 0.75:
+    # if r >= 0.75:
+    #     privacy_epsilon = 1.0
+    # elif 0.25 <= r < 0.75:
+    #     privacy_epsilon = 5.0
+    # elif r < 0.25:
+    #     privacy_epsilon = 10.0
+    if r >= 0.25:
         privacy_epsilon = 1.0
-    elif 0.25 <= r < 0.75:
+    else:
         privacy_epsilon = 5.0
-    elif r < 0.25:
-        privacy_epsilon = 10.0
     return privacy_epsilon, privacy_delta
 
 def _generate_worker_select_num(rng):
@@ -70,12 +74,24 @@ def _generate_SLO(rng):
         SLO = 10.0
     return SLO
 
+def _generate_test_type(rng, all_test_type_num):
+    r = rng.uniform(0, 1)
+    split_points = [p/all_test_type_num for p in range(all_test_type_num)] # 4 [0, 0.25, 0.5, 0.75]
+    result = 0
+    for i in range(all_test_type_num-1):
+        if split_points[i] <= r < split_points[i+1]: # [0, 0.25], [0.25, 0.5], [0.5, 0.75]
+            result = i
+    if r >= split_points[all_test_type_num-1]: # [0.75, ]
+        result = all_test_type_num-1
+    return result
+
 def _generate_arrival_time_delta(rng, rate_parameter):
     """Samples job interarrival rate from a Poisson distribution according
         to the specified rate parameter."""
     return -math.log(1.0 - rng.random()) / rate_parameter
 
-def generate_job(throughputs, last_job_arrival_time, lam,
+def generate_job(init_dataset_name_2_test_type_num,
+                 throughputs, last_job_arrival_time, lam,
                  reference_worker_type='v100', 
                  fixed_job_duration=None, 
                  fixed_privacy_budget=None,
@@ -91,10 +107,12 @@ def generate_job(throughputs, last_job_arrival_time, lam,
                  privacy_budget_generator_func=_generate_privacy_budget,
                  worker_select_num_generator_func=_generate_worker_select_num,
                  datablock_select_num_generator_func=_generate_datablock_select_num,
+                 test_type_generator_func=_generate_test_type
                  ):
     """Generates a new job.
 
        Args:
+         init_dataset_name_2_test_type_num: 
          throughputs: A dict containing pre-measured throughputs.
          reference_worker_type: The worker type to use when calculating steps.
          rng: A random number generator for selecting job parameters.
@@ -162,7 +180,6 @@ def generate_job(throughputs, last_job_arrival_time, lam,
         if (0.0 not in job_throughput) and (worker_select_num == 1 or
             (worker_select_num > 1 and job_template.distributed)):
             break
-    job_type = job_template.model
 
     # Compute the number of steps the job will run for given its duration.
     key = (job_type, worker_select_num)
@@ -182,11 +199,16 @@ def generate_job(throughputs, last_job_arrival_time, lam,
     # Optionally assign an SLO to the job.
     SLO = SLO_genrator_func(rng)
 
+    # 生成test dataset
+    all_test_type_num = init_dataset_name_2_test_type_num[job_template.target_dataset]
+    test_type = test_type_generator_func(rng, all_test_type_num)
+
     next_job_arrival_time = arrival_time_delta_generator_func(rng, 1.0 / lam) + last_job_arrival_time
 
     job = {
         "time": next_job_arrival_time,
-        "model_name": job_template.model,
+        "model_name": job_template.model_name,
+        "model_detail": job_template.model,
         "dataset_name": job_template.target_dataset,
         "datablock_select_num": datablock_select_num,
         "worker_select_num": worker_select_num,
@@ -195,18 +217,19 @@ def generate_job(throughputs, last_job_arrival_time, lam,
         "SLO": SLO,
         "priority_weight": priority_weight,
         "reference_num_steps": num_steps,
-        "throughput": job_throughput
+        "throughput": job_throughput,
+        "test_type": test_type
     }
 
     return job
 
-def generate_all_jobs(test_num, history_num, throughputs_path, lam, fixed_datablock_select_num=None):
+def generate_all_jobs(test_num, history_num, init_dataset_name_2_test_type_num, throughputs_path, lam, fixed_datablock_select_num=None):
     throughputs = read_all_throughputs_json_v2(throughputs_path)
     
     history_last_job_arrival_time = 0.0
     history_jobs_map = {}
     for index in range(history_num):
-        job = generate_job(throughputs, history_last_job_arrival_time, lam, 
+        job = generate_job(init_dataset_name_2_test_type_num, throughputs, history_last_job_arrival_time, lam, 
                         fixed_datablock_select_num=fixed_datablock_select_num)
         history_jobs_map[history_num - 1 - index] = job
         history_last_job_arrival_time = job["time"]
@@ -217,7 +240,7 @@ def generate_all_jobs(test_num, history_num, throughputs_path, lam, fixed_databl
     last_job_arrival_time = 0.0
     test_jobs_map = {}
     for index in range(test_num):
-        job = generate_job(throughputs, last_job_arrival_time, lam, 
+        job = generate_job(init_dataset_name_2_test_type_num, throughputs, last_job_arrival_time, lam, 
                         fixed_datablock_select_num=fixed_datablock_select_num)
         test_jobs_map[index] = job
         last_job_arrival_time = job["time"]

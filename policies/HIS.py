@@ -5,24 +5,30 @@ import numpy as np
 import math
 from scipy.optimize import linear_sum_assignment
 import cvxpy as cp
+import json
 
 class HISPolicy(Policy):
-    def __init__(self, beta, gamma, delta, only_small, logger):
+    def __init__(self, beta, logger):
         super().__init__()
         self._name = 'HISPolicy'
         self.beta = beta
-        self.gamma = gamma
-        self.delta = delta
-        self.only_small = only_small
+        # self.gamma = gamma
+        # self.delta = delta
+        # self.only_small = only_small
         self.logger = logger
         self.waiting_queue_capacity = 1
+        self.significance_enable = True
+        self.significance_trace_path = "/home/netlab/DL_lab/opacus_simulation/traces/significance_HIS.json"
+        with open(self.significance_trace_path, "r+") as f:
+            self.significance_trace = json.load(f)
 
     def report_state(self):
         self.logger.info("policy name: {}".format(self._name))
         self.logger.info("policy args: beta: {}".format(self.beta))
-        self.logger.info("policy args: gamma: {}".format(self.gamma))
-        self.logger.info("policy args: delta: {}".format(self.delta))
-        self.logger.info("policy args: only_small: {}".format(self.only_small))
+        # self.logger.info("policy args: gamma: {}".format(self.gamma))
+        # self.logger.info("policy args: delta: {}".format(self.delta))
+        # self.logger.info("policy args: only_small: {}".format(self.only_small))
+        self.logger.info("policy args: significance_trace_path: {}".format(self.significance_trace_path))
 
     def get_LP_result(self, sign_matrix, datablock_privacy_budget_capacity_list, job_privacy_budget_consume_list, solver=cp.ECOS):
         job_num, datablock_num = sign_matrix.shape[0], sign_matrix.shape[1]
@@ -48,28 +54,20 @@ class HISPolicy(Policy):
             print('WARNING: Allocation returned by policy not optimal!')
         return matrix_X.value
 
-    def get_sign_matrix(self, is_large_job, current_all_job_significances, sub_train_datasetidentifier_2_significance,
-                        sub_train_datasetidentifier_2_epsilon_capcity,
-                        target_epsilon_require, job_priority_weight):
+    def get_sign_matrix(self, current_all_job_priority_weights, current_all_job_significances,
+                        sub_train_datasetidentifier_2_epsilon_capcity):
         temp_index_2_datablock_identifier = {}
         sign_matrix = []
-        for job_index, job_priority_weight in enumerate(current_all_job_significances):
+        for job_index, job_priority_weight in enumerate(current_all_job_priority_weights):
             temp = []
             for datablock_index, datablock_identifier in enumerate(sub_train_datasetidentifier_2_epsilon_capcity):
                 temp_index_2_datablock_identifier[datablock_index] = datablock_identifier
-                if (not self.only_small) and (job_index + 1 < len(current_all_job_significances)):
-                    if is_large_job and target_epsilon_require <= self.delta * sub_train_datasetidentifier_2_epsilon_capcity[datablock_identifier]: # 最后一个任务不算进去
-                        temp.append(0.0)
-                    elif (not is_large_job) and target_epsilon_require > self.delta * sub_train_datasetidentifier_2_epsilon_capcity[datablock_identifier]:
-                        temp.append(0.0)
-                    else:
-                        temp.append(sub_train_datasetidentifier_2_significance[datablock_identifier] * job_priority_weight)
-                else:
-                    temp.append(sub_train_datasetidentifier_2_significance[datablock_identifier] * job_priority_weight)
+                temp.append(current_all_job_significances[job_index][datablock_identifier] * job_priority_weight)
             sign_matrix.append(temp)
         sign_matrix = np.array(sign_matrix)
         return sign_matrix, temp_index_2_datablock_identifier
 
+    '''
     def get_allocation_for_large(self, history_job_priority_weights, sub_train_datasetidentifier_2_significance,
                                 sub_train_datasetidentifier_2_epsilon_remain, sub_train_datasetidentifier_2_epsilon_capcity,
                                 index, target_epsilon_require, target_datablock_select_num, job_priority_weight):
@@ -92,22 +90,32 @@ class HISPolicy(Policy):
                 selected_datablock_identifiers.append(target_datablock_identifier)
         
         return selected_datablock_identifiers, calcu_compare_epsilon
+    '''
 
-    def get_allocation_for_small(self, history_job_priority_weights, history_job_budget_consumes, sub_train_datasetidentifier_2_significance,
-                                sub_train_datasetidentifier_2_epsilon_remain, sub_train_datasetidentifier_2_epsilon_capcity,
-                                index, target_epsilon_require, target_datablock_select_num, job_priority_weight):
-        # assert target_datablock_select_num == 1
+    def get_allocation_for_small(self, history_job_priority_weights, 
+                                history_job_budget_consumes, 
+                                history_job_signficances, 
+                                sub_train_datasetidentifier_2_significance,
+                                sub_train_datasetidentifier_2_epsilon_remain, 
+                                sub_train_datasetidentifier_2_epsilon_capcity,
+                                target_epsilon_require, 
+                                target_datablock_select_num, 
+                                job_priority_weight):
         
         selected_datablock_identifiers = []
         calcu_compare_epsilon = 0.0
         
-        current_all_job_significances = copy.deepcopy(history_job_priority_weights)
-        current_all_job_significances.append(job_priority_weight)
+        current_all_job_priority_weights = copy.deepcopy(history_job_priority_weights)
+        current_all_job_priority_weights.append(job_priority_weight)
         current_all_job_budget_consumes = copy.deepcopy(history_job_budget_consumes)
         current_all_job_budget_consumes.append(target_epsilon_require)
+        current_all_job_signficances = copy.deepcopy(history_job_signficances)
+        current_all_job_signficances.append(sub_train_datasetidentifier_2_significance)
+
         sign_matrix, temp_index_2_datablock_identifier = self.get_sign_matrix(
-            False, current_all_job_significances, sub_train_datasetidentifier_2_significance,
-            sub_train_datasetidentifier_2_epsilon_capcity, target_epsilon_require, job_priority_weight
+            current_all_job_priority_weights,
+            current_all_job_signficances,
+            sub_train_datasetidentifier_2_epsilon_capcity
         )
         
         datablock_privacy_budget_capacity_list = np.zeros(shape=sign_matrix.shape[1])
@@ -153,52 +161,50 @@ class HISPolicy(Policy):
         job_id = list(set_job_id)[0]
         target_dataset_name = list(set_dataset_name)[0]
 
-        sub_train_datasetidentifier_2_significance = state["current_sub_train_datasetidentifier_2_significance"][target_dataset_name]
         sub_train_datasetidentifier_2_epsilon_remain = state["current_sub_train_datasetidentifier_2_epsilon_remain"][target_dataset_name]
         sub_train_datasetidentifier_2_epsilon_capcity = state["current_sub_train_datasetidentifier_2_epsilon_capcity"][target_dataset_name]
         target_epsilon_require = state["job_id_2_target_epsilon_require"][job_id]
         target_datablock_select_num = state["job_id_2_target_datablock_select_num"][job_id]
         job_priority_weight = state["job_id_2_job_priority_weight"][job_id]
+        sub_train_datasetidentifier_2_significance = state["job_id_2_significance"][job_id]
 
         job_arrival_index = state["job_arrival_index"]
         all_job_sequence_num = state["all_job_sequence_num"]
         history_job_priority_weights = state["history_job_priority_weights"]
         history_job_budget_consumes = state["history_job_budget_consumes"]
+        history_job_signficance = state["history_job_significance"]
 
         # assert target_datablock_select_num == 1
         
         if len(history_job_priority_weights) < all_job_sequence_num:
             sample_history_job_priority_weights = history_job_priority_weights
             sample_history_job_budget_consumes = history_job_budget_consumes
+            sample_history_job_signficances = history_job_signficance
         else:
-            sample_history_job_priority_weights = random.sample(history_job_priority_weights, all_job_sequence_num-1)
-            sample_history_job_budget_consumes = random.sample(history_job_budget_consumes, all_job_sequence_num-1)
-
+            sample_indexes = random.sample(range(len(history_job_priority_weights)), all_job_sequence_num-1)
+            sample_history_job_priority_weights = [history_job_priority_weights[i] for i in sample_indexes]
+            sample_history_job_budget_consumes = [history_job_budget_consumes[i] for i in sample_indexes]
+            sample_history_job_signficances = [history_job_signficance[i] for i in sample_indexes]
         
-        if self.only_small:
-            if job_arrival_index <= self.beta * all_job_sequence_num:
-                selected_datablock_identifiers = []
-                calcu_compare_epsilon = 0.0
-            else:
-                selected_datablock_identifiers, \
-                    calcu_compare_epsilon = self.get_allocation_for_small(sample_history_job_priority_weights, sample_history_job_budget_consumes, sub_train_datasetidentifier_2_significance,
-                                    sub_train_datasetidentifier_2_epsilon_remain, sub_train_datasetidentifier_2_epsilon_capcity,
-                                    job_arrival_index, target_epsilon_require, target_datablock_select_num, job_priority_weight)
+        if job_arrival_index <= self.beta * all_job_sequence_num:
+            selected_datablock_identifiers = []
+            calcu_compare_epsilon = 0.0
         else:
-            if job_arrival_index <= self.beta * all_job_sequence_num:
-                selected_datablock_identifiers = []
-                calcu_compare_epsilon = 0.0
-            elif self.beta * all_job_sequence_num + 1 <= job_arrival_index <= self.gamma * all_job_sequence_num:
-                selected_datablock_identifiers, \
-                    calcu_compare_epsilon = self.get_allocation_for_large(sample_history_job_priority_weights, sub_train_datasetidentifier_2_significance,
-                                    sub_train_datasetidentifier_2_epsilon_remain, sub_train_datasetidentifier_2_epsilon_capcity,
-                                    job_arrival_index, target_epsilon_require, target_datablock_select_num, job_priority_weight)
-            else:
-                selected_datablock_identifiers, \
-                    calcu_compare_epsilon = self.get_allocation_for_small(sample_history_job_priority_weights, sample_history_job_budget_consumes, sub_train_datasetidentifier_2_significance,
-                                    sub_train_datasetidentifier_2_epsilon_remain, sub_train_datasetidentifier_2_epsilon_capcity,
-                                    job_arrival_index, target_epsilon_require, target_datablock_select_num, job_priority_weight)
+            selected_datablock_identifiers, \
+                calcu_compare_epsilon = self.get_allocation_for_small(sample_history_job_priority_weights, 
+                                sample_history_job_budget_consumes, sample_history_job_signficances, 
+                                sub_train_datasetidentifier_2_significance,
+                                sub_train_datasetidentifier_2_epsilon_remain, 
+                                sub_train_datasetidentifier_2_epsilon_capcity,
+                                target_epsilon_require, target_datablock_select_num, job_priority_weight)
+   
         job_2_selected_datablock_identifiers = [
             (job_id, identifier) for identifier in selected_datablock_identifiers
         ]
         return job_2_selected_datablock_identifiers, calcu_compare_epsilon
+
+    def get_job_datablock_signficance(self, signficance_state):
+        target_dataset_name = signficance_state["target_dataset_name"]
+        train_type = signficance_state["train_type"]
+        test_type = signficance_state["test_type"]
+        return self.significance_trace[target_dataset_name]["sub_train_{}".format(train_type)]["sub_test_{}".format(test_type)]

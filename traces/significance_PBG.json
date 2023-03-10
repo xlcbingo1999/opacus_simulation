@@ -1,0 +1,144 @@
+{
+    "EMNIST": {
+        "sub_train_0": {
+            "sub_test_0": {
+                "epsilon_consume_5.0": 0.553703427,
+                "epsilon_consume_1.0": 0.4492715
+            },
+            "sub_test_1": {
+                "epsilon_consume_5.0": 0.534247041,
+                "epsilon_consume_1.0": 0.435319364
+            },
+            "sub_test_2": {
+                "epsilon_consume_5.0": 0.693109989,
+                "epsilon_consume_1.0": 0.562304258
+            }
+        },
+        "sub_train_1": {
+            "sub_test_0": {
+                "epsilon_consume_5.0": 0.557445228,
+                "epsilon_consume_1.0": 0.46088773
+            },
+            "sub_test_1": {
+                "epsilon_consume_5.0": 0.508978724,
+                "epsilon_consume_1.0": 0.406711102
+            },
+            "sub_test_2": {
+                "epsilon_consume_5.0": 0.656637371,
+                "epsilon_consume_1.0": 0.523567379
+            }
+        },
+        "sub_train_2": {
+            "sub_test_0": {
+                "epsilon_consume_5.0": 0.525533319,
+                "epsilon_consume_1.0": 0.416704983
+            },
+            "sub_test_1": {
+                "epsilon_consume_5.0": 0.412088871,
+                "epsilon_consume_1.0": 0.294336826
+            },
+            "sub_test_2": {
+                "epsilon_consume_5.0": 0.492529958,
+                "epsilon_consume_1.0": 0.323364109
+            }
+        },
+        "sub_train_3": {
+            "sub_test_0": {
+                "epsilon_consume_5.0": 0.603954196,
+                "epsilon_consume_1.0": 0.527479947
+            },
+            "sub_test_1": {
+                "epsilon_consume_5.0": 0.513213456,
+                "epsilon_consume_1.0": 0.452155203
+            },
+            "sub_test_2": {
+                "epsilon_consume_5.0": 0.700366855,
+                "epsilon_consume_1.0": 0.631818593
+            }
+        },
+        "sub_train_4": {
+            "sub_test_0": {
+                "epsilon_consume_5.0": 0.425688207,
+                "epsilon_consume_1.0": 0.298447341
+            },
+            "sub_test_1": {
+                "epsilon_consume_5.0": 0.460551292,
+                "epsilon_consume_1.0": 0.312179983
+            },
+            "sub_test_2": {
+                "epsilon_consume_5.0": 0.505661309,
+                "epsilon_consume_1.0": 0.327813834
+            }
+        },
+        "sub_train_5": {
+            "sub_test_0": {
+                "epsilon_consume_5.0": 0.338829696,
+                "epsilon_consume_1.0": 0.297935218
+            },
+            "sub_test_1": {
+                "epsilon_consume_5.0": 0.318720967,
+                "epsilon_consume_1.0": 0.287463903
+            },
+            "sub_test_2": {
+                "epsilon_consume_5.0": 0.40440017,
+                "epsilon_consume_1.0": 0.376664788
+            }
+        },
+        "sub_train_6": {
+            "sub_test_0": {
+                "epsilon_consume_5.0": 0.359393209,
+                "epsilon_consume_1.0": 0.300941706
+            },
+            "sub_test_1": {
+                "epsilon_consume_5.0": 0.254218608,
+                "epsilon_consume_1.0": 0.210251749
+            },
+            "sub_test_2": {
+                "epsilon_consume_5.0": 0.406451106,
+                "epsilon_consume_1.0": 0.359843343
+            }
+        },
+        "sub_train_7": {
+            "sub_test_0": {
+                "epsilon_consume_5.0": 0.38076669,
+                "epsilon_consume_1.0": 0.334758103
+            },
+            "sub_test_1": {
+                "epsilon_consume_5.0": 0.330151737,
+                "epsilon_consume_1.0": 0.297321796
+            },
+            "sub_test_2": {
+                "epsilon_consume_5.0": 0.273001134,
+                "epsilon_consume_1.0": 0.220172942
+            }
+        },
+        "sub_train_8": {
+            "sub_test_0": {
+                "epsilon_consume_5.0": 0.252157331,
+                "epsilon_consume_1.0": 0.220280096
+            },
+            "sub_test_1": {
+                "epsilon_consume_5.0": 0.256658018,
+                "epsilon_consume_1.0": 0.213854089
+            },
+            "sub_test_2": {
+                "epsilon_consume_5.0": 0.365711421,
+                "epsilon_consume_1.0": 0.32416141
+            }
+        },
+        "sub_train_9": {
+            "sub_test_0": {
+                "epsilon_consume_5.0": 0.31967473,
+                "epsilon_consume_1.0": 0.277925044
+            },
+            "sub_test_1": {
+                "epsilon_consume_5.0": 0.343527734,
+                "epsilon_consume_1.0": 0.275287062
+            },
+            "sub_test_2": {
+                "epsilon_consume_5.0": 0.250466228,
+                "epsilon_consume_1.0": 0.156093568
+            }
+        }
+    }
+}

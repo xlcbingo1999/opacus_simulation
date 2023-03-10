@@ -28,3 +28,8 @@ def read_all_throughputs_json_v2(file_name):
                 parsed_throughputs[worker_type][key][other_key] =\
                     raw_throughputs[worker_type][job_type][other_job_type]
     return parsed_throughputs
+
+def read_all_accuracy_json(file_name):
+    with open(file_name, 'r') as f:
+        raw_acc = json.load(f)
+    return raw_acc

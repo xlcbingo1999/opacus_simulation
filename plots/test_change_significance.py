@@ -44,7 +44,7 @@ group_labels = list(str(hen) for hen in henzuobiaos)  # x轴刻度的标识
 plt.xticks(henzuobiaos, group_labels, fontsize=12, fontweight='bold')  # 默认字体大小为10
 plt.yticks(fontsize=12, fontweight='bold')
 # plt.title("example", fontsize=12, fontweight='bold')  # 默认字体大小为12
-plt.xlabel("Number of history jobs", fontsize=13, fontweight='bold')
+plt.xlabel(r"Number of test jobs $n$", fontsize=13, fontweight='bold')
 plt.ylabel("Significance of allocated jobs", fontsize=13, fontweight='bold')
 # plt.xlim(0.9, 6.1)  # 设置x轴的范围
 # plt.ylim(1.5, 16)
