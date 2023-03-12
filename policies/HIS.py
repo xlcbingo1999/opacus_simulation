@@ -17,10 +17,6 @@ class HISPolicy(Policy):
         # self.only_small = only_small
         self.logger = logger
         self.waiting_queue_capacity = 1
-        self.significance_enable = True
-        self.significance_trace_path = "/home/netlab/DL_lab/opacus_simulation/traces/significance_HIS.json"
-        with open(self.significance_trace_path, "r+") as f:
-            self.significance_trace = json.load(f)
 
     def report_state(self):
         self.logger.info("policy name: {}".format(self._name))
@@ -28,9 +24,8 @@ class HISPolicy(Policy):
         # self.logger.info("policy args: gamma: {}".format(self.gamma))
         # self.logger.info("policy args: delta: {}".format(self.delta))
         # self.logger.info("policy args: only_small: {}".format(self.only_small))
-        self.logger.info("policy args: significance_trace_path: {}".format(self.significance_trace_path))
 
-    def get_LP_result(self, sign_matrix, datablock_privacy_budget_capacity_list, job_privacy_budget_consume_list, solver=cp.ECOS):
+    def get_LP_result(self, sign_matrix, datablock_privacy_budget_capacity_list, job_target_datablock_selected_num_list, job_privacy_budget_consume_list, solver=cp.ECOS):
         job_num, datablock_num = sign_matrix.shape[0], sign_matrix.shape[1]
         job_privacy_budget_consume_list = np.array(job_privacy_budget_consume_list)[np.newaxis, :]
         datablock_privacy_budget_capacity_list = np.array(datablock_privacy_budget_capacity_list)[np.newaxis, :]
@@ -43,7 +38,7 @@ class HISPolicy(Policy):
         constraints = [
             matrix_X >= 0,
             matrix_X <= 1,
-            cp.sum(matrix_X, axis=1) <= 1,
+            cp.sum(matrix_X, axis=1) <= job_target_datablock_selected_num_list,
             (job_privacy_budget_consume_list @ matrix_X) <= datablock_privacy_budget_capacity_list
         ]
 
@@ -95,6 +90,7 @@ class HISPolicy(Policy):
     def get_allocation_for_small(self, history_job_priority_weights, 
                                 history_job_budget_consumes, 
                                 history_job_signficances, 
+                                history_job_target_datablock_selected_nums,
                                 sub_train_datasetidentifier_2_significance,
                                 sub_train_datasetidentifier_2_epsilon_remain, 
                                 sub_train_datasetidentifier_2_epsilon_capcity,
@@ -111,6 +107,8 @@ class HISPolicy(Policy):
         current_all_job_budget_consumes.append(target_epsilon_require)
         current_all_job_signficances = copy.deepcopy(history_job_signficances)
         current_all_job_signficances.append(sub_train_datasetidentifier_2_significance)
+        current_all_job_target_datablock_selected_nums = copy.deepcopy(history_job_target_datablock_selected_nums)
+        current_all_job_target_datablock_selected_nums.append(target_datablock_select_num)
 
         sign_matrix, temp_index_2_datablock_identifier = self.get_sign_matrix(
             current_all_job_priority_weights,
@@ -119,15 +117,16 @@ class HISPolicy(Policy):
         )
         
         datablock_privacy_budget_capacity_list = np.zeros(shape=sign_matrix.shape[1])
+        job_target_datablock_selected_num_list = np.array(current_all_job_target_datablock_selected_nums)
         for temp_index in temp_index_2_datablock_identifier:
             datablock_privacy_budget_capacity_list[temp_index] = sub_train_datasetidentifier_2_epsilon_capcity[temp_index_2_datablock_identifier[temp_index]]
-        assign_result_matrix = self.get_LP_result(sign_matrix, datablock_privacy_budget_capacity_list, current_all_job_budget_consumes)
+        assign_result_matrix = self.get_LP_result(sign_matrix, datablock_privacy_budget_capacity_list, job_target_datablock_selected_num_list, current_all_job_budget_consumes)
         job_num, datablock_num = sign_matrix.shape[0], sign_matrix.shape[1]
         current_job_probability = assign_result_matrix[-1] # 这里其实相当于算出了一个分数, 如果为了这个分数不被泄露, 可以用指数机制加噪, 该方案被证实为满足DP-差分隐私.
         choose_indexes = []
         waiting_select_indexes = np.array(range(datablock_num + 1))
         current_job_probability = list(current_job_probability)
-        current_job_probability.append(1.0 - sum(current_job_probability))
+        current_job_probability.append(target_datablock_select_num - sum(current_job_probability))
         current_job_probability = [proba if proba > 0.0 else 0.0 for proba in current_job_probability]
         current_job_probability = current_job_probability / sum(current_job_probability)
         null_index = len(current_job_probability) - 1
@@ -164,7 +163,7 @@ class HISPolicy(Policy):
         sub_train_datasetidentifier_2_epsilon_remain = state["current_sub_train_datasetidentifier_2_epsilon_remain"][target_dataset_name]
         sub_train_datasetidentifier_2_epsilon_capcity = state["current_sub_train_datasetidentifier_2_epsilon_capcity"][target_dataset_name]
         target_epsilon_require = state["job_id_2_target_epsilon_require"][job_id]
-        target_datablock_select_num = state["job_id_2_target_datablock_select_num"][job_id]
+        target_datablock_select_num = state["job_id_2_target_datablock_selected_num"][job_id]
         job_priority_weight = state["job_id_2_job_priority_weight"][job_id]
         sub_train_datasetidentifier_2_significance = state["job_id_2_significance"][job_id]
 
@@ -173,6 +172,7 @@ class HISPolicy(Policy):
         history_job_priority_weights = state["history_job_priority_weights"]
         history_job_budget_consumes = state["history_job_budget_consumes"]
         history_job_signficance = state["history_job_significance"]
+        history_job_target_datablock_selected_num = state["history_job_target_datablock_selected_num"]
 
         # assert target_datablock_select_num == 1
         
@@ -180,11 +180,13 @@ class HISPolicy(Policy):
             sample_history_job_priority_weights = history_job_priority_weights
             sample_history_job_budget_consumes = history_job_budget_consumes
             sample_history_job_signficances = history_job_signficance
+            sample_history_job_target_datablock_selected_nums = history_job_target_datablock_selected_num
         else:
             sample_indexes = random.sample(range(len(history_job_priority_weights)), all_job_sequence_num-1)
             sample_history_job_priority_weights = [history_job_priority_weights[i] for i in sample_indexes]
             sample_history_job_budget_consumes = [history_job_budget_consumes[i] for i in sample_indexes]
             sample_history_job_signficances = [history_job_signficance[i] for i in sample_indexes]
+            sample_history_job_target_datablock_selected_nums = [history_job_target_datablock_selected_num[i] for i in sample_indexes]
         
         if job_arrival_index <= self.beta * all_job_sequence_num:
             selected_datablock_identifiers = []
@@ -192,7 +194,9 @@ class HISPolicy(Policy):
         else:
             selected_datablock_identifiers, \
                 calcu_compare_epsilon = self.get_allocation_for_small(sample_history_job_priority_weights, 
-                                sample_history_job_budget_consumes, sample_history_job_signficances, 
+                                sample_history_job_budget_consumes, 
+                                sample_history_job_signficances, 
+                                sample_history_job_target_datablock_selected_nums,
                                 sub_train_datasetidentifier_2_significance,
                                 sub_train_datasetidentifier_2_epsilon_remain, 
                                 sub_train_datasetidentifier_2_epsilon_capcity,
@@ -202,9 +206,3 @@ class HISPolicy(Policy):
             (job_id, identifier) for identifier in selected_datablock_identifiers
         ]
         return job_2_selected_datablock_identifiers, calcu_compare_epsilon
-
-    def get_job_datablock_signficance(self, signficance_state):
-        target_dataset_name = signficance_state["target_dataset_name"]
-        train_type = signficance_state["train_type"]
-        test_type = signficance_state["test_type"]
-        return self.significance_trace[target_dataset_name]["sub_train_{}".format(train_type)]["sub_test_{}".format(test_type)]

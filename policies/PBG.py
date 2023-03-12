@@ -15,10 +15,6 @@ class PBGPolicy(Policy):
         self.U = U
         self.logger = logger
         self.waiting_queue_capacity = 1
-        self.significance_enable = True
-        self.significance_trace_path = "/home/netlab/DL_lab/opacus_simulation/traces/significance_PBG.json"
-        with open(self.significance_trace_path, "r+") as f:
-            self.significance_trace = json.load(f)
 
     def report_state(self):
         self.logger.info("policy name: {}".format(self._name))
@@ -74,7 +70,7 @@ class PBGPolicy(Policy):
         sub_train_datasetidentifier_2_epsilon_remain = state["current_sub_train_datasetidentifier_2_epsilon_remain"][target_dataset_name]
         sub_train_datasetidentifier_2_epsilon_capcity = state["current_sub_train_datasetidentifier_2_epsilon_capcity"][target_dataset_name]
         target_epsilon_require = state["job_id_2_target_epsilon_require"][job_id]
-        target_datablock_select_num = state["job_id_2_target_datablock_select_num"][job_id]
+        target_datablock_select_num = state["job_id_2_target_datablock_selected_num"][job_id]
         job_priority_weight = state["job_id_2_job_priority_weight"][job_id]
         sub_train_datasetidentifier_2_significance = state["job_id_2_significance"][job_id]
 
@@ -105,9 +101,3 @@ class PBGPolicy(Policy):
         ]
         return job_2_selected_datablock_identifiers, calcu_compare_epsilon
 
-    def get_job_datablock_signficance(self, signficance_state):
-        target_dataset_name = signficance_state["target_dataset_name"]
-        train_type = signficance_state["train_type"]
-        test_type = signficance_state["test_type"]
-        epsilon_consume = signficance_state["epsilon_consume"]
-        return self.significance_trace[target_dataset_name]["sub_train_{}".format(train_type)]["sub_test_{}".format(test_type)]["epsilon_consume_{}".format(epsilon_consume)]

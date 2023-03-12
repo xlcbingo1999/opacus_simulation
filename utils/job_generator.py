@@ -55,9 +55,9 @@ def _generate_worker_select_num(rng):
 def _generate_datablock_select_num(rng):
     num = 1
     r = rng.uniform(0, 1)
-    if 0.85 <= r <= 0.9:
+    if 0.80 <= r <= 0.95:
         num = 2
-    elif 0.91 <= r <= 0.98:
+    elif 0.95 <= r <= 0.98:
         num = 4
     elif 0.99 <= r:
         num = 8

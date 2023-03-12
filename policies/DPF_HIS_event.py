@@ -28,22 +28,16 @@ class DPFHISPolicy(Policy):
         self.waiting_queue_capacity = waiting_queue_capacity
 
         self.beta = beta
-        self.logger = logger
-
-        self.significance_enable = True
-        self.significance_trace_path = "/home/netlab/DL_lab/opacus_simulation/traces/significance_HIS.json"
-        with open(self.significance_trace_path, "r+") as f:
-            self.significance_trace = json.load(f)
+        self.logger = logger        
     
     def report_state(self):
         self.logger.info("policy name: {}".format(self._name))
         self.logger.info("policy args: beta: {}".format(self.beta))
         self.logger.info("policy args: waiting_queue_capacity: {}".format(self.waiting_queue_capacity))
-        self.logger.info("policy args: significance_trace_path: {}".format(self.significance_trace_path))
 
     def get_allocation(self, state):
         job_id_2_target_epsilon_require = state["job_id_2_target_epsilon_require"]
-        job_id_2_target_datablock_select_num = state["job_id_2_target_datablock_select_num"]
+        job_id_2_target_datablock_select_num = state["job_id_2_target_datablock_selected_num"]
         job_id_2_job_priority_weight = state["job_id_2_job_priority_weight"]
         job_id_2_target_dataset_name = state["job_id_2_target_dataset_name"]
         job_id_2_significance = state["job_id_2_significance"]
@@ -51,7 +45,7 @@ class DPFHISPolicy(Policy):
         history_job_priority_weights = state["history_job_priority_weights"]
         history_job_budget_consumes = state["history_job_budget_consumes"]
         history_job_signficance = state["history_job_significance"]
-        
+        history_job_target_datablock_selected_num = state["history_job_target_datablock_selected_num"]
 
         assert len(job_id_2_target_dataset_name) >= self.waiting_queue_capacity
         set_dataset_name = set(job_id_2_target_dataset_name.values())
@@ -78,6 +72,7 @@ class DPFHISPolicy(Policy):
             history_job_priority_weights, 
             history_job_budget_consumes,
             history_job_signficance,
+            history_job_target_datablock_selected_num,
             sub_train_datasetidentifier_2_epsilon_remain,
             sub_train_datasetidentifier_2_epsilon_capcity
         )
@@ -89,6 +84,7 @@ class DPFHISPolicy(Policy):
                         history_job_priority_weights, 
                         history_job_budget_consumes,
                         history_job_signficance,
+                        history_job_target_datablock_selected_num,
                         sub_train_datasetidentifier_2_epsilon_remain,
                         sub_train_datasetidentifier_2_epsilon_capcity):
         for job in self.waiting_queue:
@@ -102,6 +98,7 @@ class DPFHISPolicy(Policy):
                                                                         history_job_priority_weights, 
                                                                         history_job_budget_consumes,
                                                                         history_job_signficance,
+                                                                        history_job_target_datablock_selected_num,
                                                                         sub_train_datasetidentifier_2_epsilon_remain,
                                                                         sub_train_datasetidentifier_2_epsilon_capcity)
         return job_2_selected_datablock_identifiers, calcu_compare_epsilon
@@ -111,21 +108,25 @@ class DPFHISPolicy(Policy):
                                     history_job_priority_weights, 
                                     history_job_budget_consumes,
                                     history_job_signficance,
+                                    history_job_target_datablock_selected_num,
                                     sub_train_datasetidentifier_2_epsilon_remain,
                                     sub_train_datasetidentifier_2_epsilon_capcity):
         if len(history_job_priority_weights) + len(self.waiting_queue) < all_job_sequence_num:
             sample_history_job_priority_weights = history_job_priority_weights
             sample_history_job_budget_consumes = history_job_budget_consumes
             sample_history_job_signficances = history_job_signficance
+            sample_history_job_target_datablock_selected_nums = history_job_target_datablock_selected_num
         else:
             sample_indexes = random.sample(range(len(history_job_priority_weights)), all_job_sequence_num-len(self.waiting_queue))
             sample_history_job_priority_weights = [history_job_priority_weights[i] for i in sample_indexes]
             sample_history_job_budget_consumes = [history_job_budget_consumes[i] for i in sample_indexes]
             sample_history_job_signficances = [history_job_signficance[i] for i in sample_indexes]
+            sample_history_job_target_datablock_selected_nums = [history_job_target_datablock_selected_num[i] for i in sample_indexes]
         job_2_selected_datablock_identifiers, \
             calcu_compare_epsilon = self.get_allocation_for_small(sample_history_job_priority_weights, 
                                                                 sample_history_job_budget_consumes,
                                                                 sample_history_job_signficances,
+                                                                sample_history_job_target_datablock_selected_nums,
                                                                 sub_train_datasetidentifier_2_epsilon_remain, 
                                                                 sub_train_datasetidentifier_2_epsilon_capcity)
         return job_2_selected_datablock_identifiers, calcu_compare_epsilon
@@ -144,7 +145,7 @@ class DPFHISPolicy(Policy):
         sign_matrix = np.array(sign_matrix)
         return sign_matrix, temp_index_2_datablock_identifier
 
-    def get_LP_result(self, sign_matrix, datablock_privacy_budget_capacity_list, job_privacy_budget_consume_list, solver=cp.ECOS):
+    def get_LP_result(self, sign_matrix, datablock_privacy_budget_capacity_list, job_target_datablock_selected_num_list, job_privacy_budget_consume_list, solver=cp.ECOS):
         job_num, datablock_num = sign_matrix.shape[0], sign_matrix.shape[1]
         job_privacy_budget_consume_list = np.array(job_privacy_budget_consume_list)[np.newaxis, :]
         datablock_privacy_budget_capacity_list = np.array(datablock_privacy_budget_capacity_list)[np.newaxis, :]
@@ -157,7 +158,7 @@ class DPFHISPolicy(Policy):
         constraints = [
             matrix_X >= 0,
             matrix_X <= 1,
-            cp.sum(matrix_X, axis=1) <= 1,
+            cp.sum(matrix_X, axis=1) <= job_target_datablock_selected_num_list,
             (job_privacy_budget_consume_list @ matrix_X) <= datablock_privacy_budget_capacity_list
         ]
 
@@ -183,7 +184,7 @@ class DPFHISPolicy(Policy):
             schedule_order.append((x, y))
         return schedule_order
 
-    def get_allocation_for_small(self, history_job_priority_weights, history_job_budget_consumes, history_job_signficances,
+    def get_allocation_for_small(self, history_job_priority_weights, history_job_budget_consumes, history_job_signficances, history_job_target_datablock_selected_nums,
                                 sub_train_datasetidentifier_2_epsilon_remain, sub_train_datasetidentifier_2_epsilon_capcity):
         # assert target_datablock_select_num == 1
         calcu_compare_epsilon = 0.0
@@ -191,10 +192,13 @@ class DPFHISPolicy(Policy):
         current_all_job_priority_weights = copy.deepcopy(history_job_priority_weights)
         current_all_job_budget_consumes = copy.deepcopy(history_job_budget_consumes)
         current_all_job_significances = copy.deepcopy(history_job_signficances)
+        current_all_job_target_datablock_selected_nums = copy.deepcopy(history_job_target_datablock_selected_nums)
+
         for job in self.waiting_queue:
             current_all_job_priority_weights.append(job.job_priority_weight)
             current_all_job_budget_consumes.append(job.target_epsilon_require)
             current_all_job_significances.append(job.sub_train_datasetidentifier_2_significance)
+            current_all_job_target_datablock_selected_nums.append(job.target_datablock_select_num)
         sign_matrix, temp_index_2_datablock_identifier = self.get_sign_matrix(
             current_all_job_priority_weights,
             current_all_job_significances,
@@ -202,9 +206,10 @@ class DPFHISPolicy(Policy):
         )
         
         datablock_privacy_budget_capacity_list = np.zeros(shape=sign_matrix.shape[1])
+        job_target_datablock_selected_num_list = np.array(current_all_job_target_datablock_selected_nums)
         for temp_index in temp_index_2_datablock_identifier:
             datablock_privacy_budget_capacity_list[temp_index] = sub_train_datasetidentifier_2_epsilon_capcity[temp_index_2_datablock_identifier[temp_index]]
-        assign_result_matrix = self.get_LP_result(sign_matrix, datablock_privacy_budget_capacity_list, current_all_job_budget_consumes)
+        assign_result_matrix = self.get_LP_result(sign_matrix, datablock_privacy_budget_capacity_list, job_target_datablock_selected_num_list, current_all_job_budget_consumes)
         job_num, datablock_num = sign_matrix.shape[0], sign_matrix.shape[1]
         waiting_job_selected_datablock_identifiers = []
         waiting_job_selected_sign = []
@@ -216,7 +221,7 @@ class DPFHISPolicy(Policy):
             choose_indexes = []
             waiting_select_indexes = np.array(range(datablock_num + 1))
             current_job_probability = list(current_job_probability)
-            current_job_probability.append(1.0 - sum(current_job_probability))
+            current_job_probability.append(job.target_datablock_select_num - sum(current_job_probability))
             current_job_probability = [proba if proba > 0.0 else 0.0 for proba in current_job_probability]
             current_job_probability = current_job_probability / sum(current_job_probability)
             null_index = len(current_job_probability) - 1
@@ -269,9 +274,3 @@ class DPFHISPolicy(Policy):
                 result_dataset_identifier = dataset_identifier
         assert result_dataset_identifier != ""
         return result_dataset_identifier
-        
-    def get_job_datablock_signficance(self, signficance_state):
-        target_dataset_name = signficance_state["target_dataset_name"]
-        train_type = signficance_state["train_type"]
-        test_type = signficance_state["test_type"]
-        return self.significance_trace[target_dataset_name]["sub_train_{}".format(train_type)]["sub_test_{}".format(test_type)]
